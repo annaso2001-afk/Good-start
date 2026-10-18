@@ -15125,7 +15125,7 @@ function renderShapesQuestion() {
                 s.queue.shift(); // Убираем вопрос из очереди
                 setTimeout(() => { s.answered = false; renderShapesQuestion(); }, 850);
             } else {
-                            } else {
+                          
                 item.isRepeat = true; // Запоминаем, что была ошибка
                 speakWord(correctAnswer); // При ошибке всегда озвучиваем правильный ответ
                 
