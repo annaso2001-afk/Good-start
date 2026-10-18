@@ -1126,13 +1126,6 @@ body.dark-theme .global-word-popup .gwp-lang {
     background: #2a3a5c;
     color: #aaa;
 }
-body.dark-theme .menu-card,
-body.dark-theme .book-card,
-body.dark-theme .word-card,
-body.dark-theme .game-card {
-    background: linear-gradient(135deg, #1e2a45 0%, #2a3a5c 100%) !important;
-    color: #e0e0e0 !important;
-}
 /* === ИГРА: ФОРМЫ === */
 .sg-levels {
     display: grid;
@@ -1558,6 +1551,7 @@ body.dark-theme .fc-emoji i {
 // ПОЛЬЗОВАТЕЛИ
 // ============================================================
 const USERS_LIST_KEY  = 'goodStart_users';
+const PICKER_SEEN_KEY = 'goodStart_pickerSeen';
 const ACTIVE_USER_KEY = 'goodStart_activeUser';
 const MIGRATION_FLAG  = 'goodStart_migrated_v1';
 const AVATAR_CHOICES  = ['🦁','🐼','🦊','🐸','🐙','🦄','🐶','🐱','🐨','🐯','🦉','🐰'];
@@ -1595,6 +1589,7 @@ function invalidateActiveUserCache() {
 function setActiveUser(id) {
     invalidateActiveUserCache();
     localStorage.setItem(ACTIVE_USER_KEY, id);
+    localStorage.setItem(PICKER_SEEN_KEY, '1');
 
     // Скрываем экран выбора
     const overlay = document.getElementById('user-picker-overlay');
@@ -1689,15 +1684,15 @@ function removeUser(id) {
 // ============================================================
 // АВТО-ПРЕФИКС: localStorage сам добавляет имя пользователя
 // ============================================================
-(function patchLocalStorage() {
-    const _setItem    = Storage.prototype.setItem;
-    const _getItem    = Storage.prototype.getItem;
-    const _removeItem = Storage.prototype.removeItem;
 
-    // Сохраняем оригиналы для миграции
-    Storage.prototype.setItem.__native__    = _setItem;
-    Storage.prototype.getItem.__native__    = _getItem;
-    Storage.prototype.removeItem.__native__ = _removeItem;
+// Глобальные переменные — чтобы миграция ниже могла
+// использовать ОРИГИНАЛЬНЫЕ методы (без префикса).
+let _nativeSetItem, _nativeGetItem, _nativeRemoveItem;
+
+(function patchLocalStorage() {
+    _nativeSetItem    = Storage.prototype.setItem;
+    _nativeGetItem    = Storage.prototype.getItem;
+    _nativeRemoveItem = Storage.prototype.removeItem;
 
     const GLOBAL_KEYS = [
         'goodStart_theme',
@@ -1722,25 +1717,22 @@ function removeUser(id) {
     }
 
     Storage.prototype.setItem = function(key, value) {
-        return _setItem.call(this, prefixed(key), value);
+        return _nativeSetItem.call(this, prefixed(key), value);
     };
     Storage.prototype.getItem = function(key) {
-        return _getItem.call(this, prefixed(key));
+        return _nativeGetItem.call(this, prefixed(key));
     };
     Storage.prototype.removeItem = function(key) {
-        return _removeItem.call(this, prefixed(key));
+        return _nativeRemoveItem.call(this, prefixed(key));
     };
 })();
 // ============================================================
 // МИГРАЦИЯ: старые ключи → профиль "default"
 // ============================================================
 (function migrateOldData() {
-    // Оригинальные методы — сохраняем ДО перехвата
-    const nativeSet = Storage.prototype.setItem.__native__ || Storage.prototype.setItem;
-    const nativeGet = Storage.prototype.getItem.__native__ || Storage.prototype.getItem;
-    const nativeRemove = Storage.prototype.removeItem.__native__ || Storage.prototype.removeItem;
-
-    if (nativeGet.call(localStorage, MIGRATION_FLAG)) return;
+    // Используем ОРИГИНАЛЬНЫЕ методы (без префикса),
+    // которые мы сохранили в глобальные переменные.
+    if (_nativeGetItem.call(localStorage, MIGRATION_FLAG)) return;
 
     const keysToMigrate = ['goodStart_myDictionary', 'goodStart_learnedWords'];
     for (let i = 0; i < localStorage.length; i++) {
@@ -1753,13 +1745,13 @@ function removeUser(id) {
     }
 
     keysToMigrate.forEach(k => {
-        const v = nativeGet.call(localStorage, k);
+        const v = _nativeGetItem.call(localStorage, k);
         if (v === null) return;
-        nativeSet.call(localStorage, 'u:default:' + k, v);
-        nativeRemove.call(localStorage, k);
+        _nativeSetItem.call(localStorage, 'u:default:' + k, v);
+        _nativeRemoveItem.call(localStorage, k);
     });
 
-    nativeSet.call(localStorage, MIGRATION_FLAG, '1');
+    _nativeSetItem.call(localStorage, MIGRATION_FLAG, '1');
 })();
 
 // ============================================================
@@ -1957,8 +1949,9 @@ function initUserSystem() {
         chip.addEventListener('click', () => showUserPicker());
     }
 
+    if (!localStorage.getItem(PICKER_SEEN_KEY)) {
         showUserPicker();
-    
+    }
 }
 
 /**
@@ -2203,8 +2196,11 @@ async function getTranslation(word) {
     let translation = await googleTranslate(word);
     if (!translation) translation = '—';
 
-    translationCache[wordLower] = translation;
-    localStorage.setItem('translation_' + wordLower, translation);
+    // Неудачные переводы не кэшируем — при следующем клике попробуем снова
+    if (translation !== '—') {
+        translationCache[wordLower] = translation;
+        localStorage.setItem('translation_' + wordLower, translation);
+    }
     return translation;
 }
 
@@ -2240,20 +2236,31 @@ if ('speechSynthesis' in window) {
 }
 
 function speakWord(text, btn) {
-    if (!soundEnabled) return;                                  // ← новая строка
+    if (!soundEnabled) return;
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
-    if (!britishVoice) britishVoice = findBritishVoice();
 
+    const isRussian = /[\u0400-\u04FF]/.test(text || '');
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-GB';
-    utterance.rate = 0.75;
+
+    if (isRussian) {
+        utterance.lang = 'ru-RU';
+        utterance.rate = 0.9;
+        const ruVoice = window.speechSynthesis
+            .getVoices()
+            .find(v => v.lang === 'ru-RU' || v.lang.startsWith('ru'));
+        if (ruVoice) utterance.voice = ruVoice;
+    } else {
+        if (!britishVoice) britishVoice = findBritishVoice();
+        utterance.lang = 'en-GB';
+        utterance.rate = 0.75;
+        if (britishVoice) utterance.voice = britishVoice;
+    }
     utterance.pitch = 1.0;
-    if (britishVoice) utterance.voice = britishVoice;
 
     if (btn) {
         btn.classList.add('speaking');
-        utterance.onend = () => btn.classList.remove('speaking');
+        utterance.onend   = () => btn.classList.remove('speaking');
         utterance.onerror = () => btn.classList.remove('speaking');
     }
     window.speechSynthesis.speak(utterance);
@@ -7712,7 +7719,7 @@ function renderWordCategoryInto(container, categoryId) {
     currentWordCategory = categoryId;
     currentSearchQuery = '';
     const words = dedupeWords(wordsData[categoryId] || []);
-    const allSubcats = [...basicSubCategories, ...wordSubCategories];
+    const allSubcats = [...basicSubCategories, ...wordSubCategories, ...mainDictCategories];
     const cat = allSubcats.find(c => c.id === categoryId);
 
     const letters = new Set();
@@ -7960,6 +7967,30 @@ function numberValue(str) {
     }
     if (!foundAny) return null;
     return total + current;
+}
+// ▼▼▼ ВСТАВИТЬ ВОТ СЮДА ▼▼▼
+// Проверяет, является ли слово числом или порядковым числительным
+function isNumberWord(en) {
+    if (!en) return false;
+    const key = String(en).toLowerCase().trim();
+    if (!key) return false;
+
+    // Слова из категорий чисел / порядковых числительных
+    const numCats = ['numbers_basic', 'ordinal_numbers'];
+    for (const cat of numCats) {
+        if ((wordsData[cat] || []).some(w => w.en.toLowerCase().trim() === key)) {
+            return true;
+        }
+    }
+
+    // На случай нестандартных записей (zero и т.п.)
+    if (typeof numberValue === 'function') {
+        const v = numberValue(key);
+        if (v !== null && Number.isFinite(v) && v >= 0 && v <= 1000) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -8486,14 +8517,16 @@ function attachExerciseHandlers(book, chapterIndex) {
     const notesEl = document.querySelector('.chapter-notes');
     if (!notesEl) return;
     const storageKey = `ex_${book.id}_${chapterIndex}`;
-    const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}') || {}; } catch (e) {}
     const inputs = notesEl.querySelectorAll('.gap-input');
     inputs.forEach((inp, i) => {
         inp.dataset.gapIndex = i;
         const savedVal = saved[i];
         if (savedVal) inp.value = savedVal;
         inp.addEventListener('input', () => {
-            const data = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            let data = {};
+            try { data = JSON.parse(localStorage.getItem(storageKey) || '{}') || {}; } catch (e) {}
             data[i] = inp.value;
             localStorage.setItem(storageKey, JSON.stringify(data));
         });
@@ -8702,11 +8735,29 @@ function renderWordsList(container, isSidebar) {
                 btn.style.transform = '';
                 btn.style.transition = '';
             }, 700);
-            delete translationCache[wordLower];
-            localStorage.removeItem('translation_' + wordLower);
-            const newTranslation = await getTranslation(word);
+
+            // Определяем, русское слово или английское
+            const item = getDictItem(word);
+            let newTranslation;
+
+            if (item && item.lang === 'ru') {
+                // Русское: чистим кэш RU→EN и переводим заново в правильную сторону
+                localStorage.removeItem('translation_ru_en_' + wordLower);
+                const res = await translateAnyWord(word);
+                newTranslation = res.translation;
+            } else {
+                // Английское: чистим EN→RU кэш и переводим заново
+                delete translationCache[wordLower];
+                localStorage.removeItem('translation_' + wordLower);
+                newTranslation = await getTranslation(word);
+            }
+
             if (block) {
-                block.innerHTML = `<span class="translation-text">${newTranslation}</span>`;
+                block.innerHTML = '';
+                const span = document.createElement('span');
+                span.className = 'translation-text';
+                span.textContent = newTranslation;
+                block.appendChild(span);
             }
         });
     });
@@ -8742,38 +8793,51 @@ function renderWordsList(container, isSidebar) {
 
 function showTranslation(word, translation) {
     document.querySelectorAll(`[data-translation-for="${CSS.escape(word)}"]`).forEach(el => {
-        el.innerHTML = `<span class="translation-text">${translation}</span>`;
+        el.innerHTML = '';
+        const span = document.createElement('span');
+        span.className = 'translation-text';
+        span.textContent = translation;
+        el.appendChild(span);
     });
 }
-
 // ============================================================
 // ФОРМА РЕДАКТИРОВАНИЯ
 // ============================================================
 function openEditForm(container, word, isSidebar) {
     const item = getDictItem(word);
     if (!item) return;
-        const card = container.querySelector(`[data-word-card="${CSS.escape(word)}"]`);
+    const card = container.querySelector(`[data-word-card="${CSS.escape(word)}"]`);
     if (!card) return;
+
     const translationBlock = card.querySelector('.dict-word-translation');
     translationBlock.style.display = 'none';
-    const currentTranslation = item.customTranslation || translationBlock.querySelector('.translation-text')?.textContent || '';
+
+    const currentTranslation = item.customTranslation
+        || translationBlock.querySelector('.translation-text')?.textContent
+        || '';
+
     const form = document.createElement('div');
     form.className = 'edit-area';
     form.innerHTML = `
         <div class="edit-label">Перевод (можно изменить):</div>
-        <input type="text" id="edit-translation-${word}" value="${currentTranslation.replace(/"/g, '&quot;')}" placeholder="Введи перевод...">
+        <input type="text" class="edit-input" placeholder="Введи перевод...">
         <div class="edit-actions">
-            <button class="save-btn" id="save-${word}">💾 Сохранить</button>
-            <button class="cancel-btn" id="cancel-${word}">Отмена</button>
+            <button class="save-btn">💾 Сохранить</button>
+            <button class="cancel-btn">Отмена</button>
         </div>
     `;
     card.appendChild(form);
-    document.getElementById(`save-${word}`).addEventListener('click', () => {
-        const newTranslation = document.getElementById(`edit-translation-${word}`).value.trim();
+
+    // Значение подставляем через .value — безопасно для любых символов
+    const input = form.querySelector('.edit-input');
+    input.value = currentTranslation;
+
+    form.querySelector('.save-btn').addEventListener('click', () => {
+        const newTranslation = input.value.trim();
         updateDictItem(word, { customTranslation: newTranslation });
         renderWordsList(container, isSidebar);
     });
-    document.getElementById(`cancel-${word}`).addEventListener('click', () => {
+    form.querySelector('.cancel-btn').addEventListener('click', () => {
         renderWordsList(container, isSidebar);
     });
 }
@@ -10612,6 +10676,20 @@ let currentGameAudience = null;      // null | 'kids' | 'adults'
 let currentGameType = null;
 let currentGameSource = null;        // {type:'my'|'category'|'all', categoryId?}
 
+// --- Помощники для правильной навигации "Назад" ---
+function goBackToGamesList() {
+    if (currentGameAudience === 'adults') renderAdultsGameList();
+    else renderKidsGameList();
+}
+
+function goBackToSourcePicker(gameId) {
+    if (currentGameSource && currentGameSource.isAdults) {
+        renderAdultsSourceForSpecificGame(gameId, currentGameSource.mode || 'words');
+    } else {
+        renderGameSourcePicker(gameId);
+    }
+}
+
 const gameAudiences = [
     {
         id: 'kids',
@@ -10706,7 +10784,8 @@ const kidsGames = [
     { id: 'build-word',         icon: '🔤', title: 'Собери слово',     desc: 'Составь слово из перемешанных букв' },
     { id: 'hangman',            icon: '🪢', title: 'Виселица',         desc: 'Угадай слово по буквам' },
     { id: 'shapes', icon: '🔷', title: 'Формы', desc: 'Фигуры и предметы вокруг нас' },
-    { id: 'colors', icon: '🌈', title: 'Цвета', desc: 'Учи цвета играя' }
+    { id: 'colors', icon: '🌈', title: 'Цвета', desc: 'Учи цвета играя' },
+    { id: 'numbers', icon: '🔢', title: 'Числа', desc: 'Учи числа и счёт' }
 ];
 
 function renderKidsGameList() {
@@ -10750,6 +10829,7 @@ function renderKidsGameList() {
             if (gameId === 'hangman')            renderHangmanModePicker();
             if (gameId === 'shapes') { startShapesGame(); return; }
             if (gameId === 'colors') { startColorsGame(); return; }
+            if (gameId === 'numbers') { startNumbersGame(); return; }
         });
     });
 }
@@ -11068,11 +11148,7 @@ function attachBackButton(buttonId) {
             wordSearchState._cleanup();
             wordSearchState = null;
         }
-        if (currentGameSource && currentGameSource.isAdults) {
-            renderAdultsGameList();
-        } else {
-            renderKidsGameList();
-        }
+        goBackToGamesList();
     });
 }
 
@@ -11099,6 +11175,7 @@ function getAdultsMyDictWords() {
             if (!word) return;
             const key = word.toLowerCase();
             if (seen.has(key)) return;
+            if (isNumberWord(word)) return;
             seen.add(key);
 
             let ru = item.customTranslation || '';
@@ -11118,18 +11195,18 @@ function getAdultsMyDictWords() {
 }
 
 function getAdultsLearnedWords() {
-    return getLearnedWordsData();
+    return getLearnedWordsData().filter(w => !isNumberWord(w.en));
 }
 // Все слова из тематических категорий (без "Базы")
 function getAdultsWordsFromThemes() {
     const result = [];
     const seen = new Set();
-    
 
     wordSubCategories.forEach(cat => {
         (wordsData[cat.id] || []).forEach(w => {
             const key = w.en.toLowerCase().trim();
             if (seen.has(key)) return;
+            if (isNumberWord(w.en)) return;   // ← НОВОЕ
             seen.add(key);
             result.push(w);
         });
@@ -11968,13 +12045,15 @@ let flashcardsState = null;
 function getWordsFromSource(source) {
     const result = [];
     const seen = new Set();
-
-    function addWord(w) {
-        const key = (typeof w === 'string' ? w : w.en).toLowerCase().trim();
-        if (seen.has(key)) return;
-        seen.add(key);
-        result.push(w);
-    }
+ 
+  function addWord(w) {
+    const wordEn = typeof w === 'string' ? w : w.en;
+    const key = wordEn.toLowerCase().trim();
+    if (seen.has(key)) return;
+    if (isNumberWord(wordEn)) return;   // ← НОВОЕ: исключаем числа
+    seen.add(key);
+    result.push(w);
+}
 
     // --- Превращает запись из myDictionary в {en, ru, emoji} ---
     function dictItemToWord(item) {
@@ -12014,9 +12093,20 @@ function getWordsFromSource(source) {
                 if (w) addWord(w);
             });
         }
-    } else if (source.type === 'learned') {
+        } else if (source.type === 'learned') {
         if (typeof getLearnedWordsData === 'function') {
             getLearnedWordsData().forEach(addWord);
+        }
+    } else if (source.type === 'themes') {
+        // Взрослые темы — wordSubCategories + Мой словарик
+        wordSubCategories.forEach(cat => {
+            (wordsData[cat.id] || []).forEach(addWord);
+        });
+        if (Array.isArray(myDictionary)) {
+            myDictionary.forEach(item => {
+                const w = dictItemToWord(item);
+                if (w) addWord(w);
+            });
         }
     } else {
         // 'all' — вся База + Мой словарик
@@ -12103,7 +12193,9 @@ function showSourceCategoryPicker(gameId) {
             <h3 style="color:#E06A1E; font-size:1.1rem;">Выбери категорию:</h3>
         </div>
         <div class="games-grid">
-            ${basicSubCategories.map(cat => {
+            ${basicSubCategories
+    .filter(cat => !['numbers_basic', 'ordinal_numbers'].includes(cat.id))
+    .map(cat => {
                 const count = (wordsData[cat.id] || []).length;
                 return `
                     <div class="game-card" data-cat-id="${cat.id}">
@@ -12157,21 +12249,24 @@ function getSourceLabel(source) {
     if (source.type === 'my') return '⭐ Мой словарик';
     if (source.type === 'learned') return '✅ Изучено';
     if (source.type === 'all') return '🌍 База + Мой словарик';
-    if (source.type === 'category' && source.categoryId) {
-        const cat = basicSubCategories.find(c => c.id === source.categoryId);
-        return cat ? cat.icon + ' ' + cat.title : 'Категория';
-    }
+    if (source.type === 'themes') return '🌍 Все темы';
+if (source.type === 'category' && source.categoryId) {
+    const cat = basicSubCategories.find(c => c.id === source.categoryId)
+             || wordSubCategories.find(c => c.id === source.categoryId);
+    return cat ? cat.icon + ' ' + cat.title : 'Категория';
+}
     return 'Источник';
 }
 function renderFlashcardsGame(wordsOverride) {
         const allWords = wordsOverride
         || getWordsFromSource(currentGameSource || { type: 'all' });
-          const isAdultsSource = currentGameSource && currentGameSource.isAdults;
+    const isAdultsSource = currentGameSource && currentGameSource.isAdults;
+    const isMySource     = currentGameSource && currentGameSource.type === 'my';
 
-    const words = (currentGameSource && currentGameSource.type === 'learned') || isAdultsSource
+    const words = (isAdultsSource || isMySource ||
+                   (currentGameSource && currentGameSource.type === 'learned'))
         ? allWords
         : allWords.filter(w => !isLearned(w.en));
-
     if (allWords.length < 5) {
         contentEl.innerHTML = `
             <div style="text-align:center;">
@@ -12362,33 +12457,7 @@ function renderFlashcardsGame(wordsOverride) {
                 background: linear-gradient(135deg, #999 0%, #BBB 100%);
                 box-shadow: 0 4px 12px rgba(150,150,150,0.3);
             }
-.sound-toggle {
-    position: fixed;
-    bottom: 25px;
-    right: 100px;
-    width: 55px;
-    height: 55px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
-    border: 4px solid #FFF;
-    color: #FFF;
-    font-size: 1.4rem;
-    cursor: pointer;
-    box-shadow: 0 6px 20px rgba(79,168,216,0.5);
-    z-index: 100;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.sound-toggle:hover {
-    transform: scale(1.1);
-    box-shadow: 0 8px 25px rgba(79,168,216,0.65);
-}
-.sound-toggle.muted {
-    background: linear-gradient(135deg, #B0B0B0 0%, #C8C8C8 100%);
-    box-shadow: 0 6px 20px rgba(150,150,150,0.5);
-}
+
         </style>
     `;
 
@@ -12583,8 +12652,11 @@ function renderHangmanFriendSetup() {
     `;
     contentEl.innerHTML = '';
     contentEl.appendChild(wrapper);
-
-    document.getElementById('back-to-hangman-modes').addEventListener('click', renderHangmanModePicker);
+document.getElementById('back-to-hangman-modes')
+    .addEventListener('click', () => {
+        if (currentGameAudience === 'adults') renderAdultsHangmanModePicker();
+        else renderHangmanModePicker();
+    });
 
     const input = document.getElementById('hm-friend-word');
     const err = document.getElementById('hm-friend-error');
@@ -12746,7 +12818,10 @@ function renderHangmanGame(words, source, isFriendMode) {
                 <p>Выбери другой источник — с короткими английскими словами.</p>
             </div>
         `;
-        document.getElementById('back-to-hangman-modes').addEventListener('click', renderHangmanModePicker);
+        document.getElementById('back-to-hangman-modes').addEventListener('click', () => {
+    if (currentGameAudience === 'adults') renderAdultsHangmanModePicker();
+    else renderHangmanModePicker();
+});
         return;
     }
 
@@ -12973,9 +13048,10 @@ function renderHangmanGame(words, source, isFriendMode) {
         </style>
     `;
 
-           document.getElementById('hm-back').addEventListener('click', () => {
+    document.getElementById('hm-back').addEventListener('click', () => {
         if (hmState.isFriendMode) {
-            renderHangmanModePicker();
+            if (currentGameAudience === 'adults') renderAdultsHangmanModePicker();
+            else renderHangmanModePicker();
         } else if (currentGameSource && currentGameSource.isAdults) {
             renderAdultsSourceForSpecificGame('hangman', currentGameSource.mode || 'words');
         } else {
@@ -13169,9 +13245,10 @@ function renderHangmanBoard() {
     }
     renderHangmanGame(freshWords, currentGameSource, false);
 });
-                     document.getElementById('hm-back2').addEventListener('click', () => {
+        document.getElementById('hm-back2').addEventListener('click', () => {
             if (s.isFriendMode) {
-                renderHangmanModePicker();
+                if (currentGameAudience === 'adults') renderAdultsHangmanModePicker();
+                else renderHangmanModePicker();
             } else if (currentGameSource && currentGameSource.isAdults) {
                 renderAdultsSourceForSpecificGame('hangman', currentGameSource.mode || 'words');
             } else {
@@ -13227,9 +13304,8 @@ function handleHangmanGuess(letter) {
     );
     if (revealed) {
         speakWord(s.word);
-    } else if (s.wrongLetters.size >= s.maxWrong) {
-        // проиграли
     }
+    // При поражении доска уже перерисована с результатом — тут делать нечего
 }
 // ============================================================
 // ИГРА: СОБЕРИ СЛОВО
@@ -13608,7 +13684,7 @@ function renderBuildWordComplete() {
     });
 
     document.getElementById('bw-back').addEventListener('click', () => {
-        renderGameSourcePicker('build-word');
+        goBackToSourcePicker('build-word');
     });
 }
 // ============================================================
@@ -13974,7 +14050,7 @@ function renderChooseTranslationModePicker(words) {
     contentEl.appendChild(wrapper);
 
     document.getElementById('back-to-sources').addEventListener('click', () => {
-        renderGameSourcePicker('choose-translation');
+        goBackToSourcePicker('choose-translation');
     });
 
     wrapper.querySelectorAll('[data-mode]').forEach(card => {
@@ -14286,7 +14362,7 @@ function renderCtComplete() {
     });
 
     document.getElementById('ct-back').addEventListener('click', () => {
-        renderGameSourcePicker('choose-translation');
+        goBackToSourcePicker('choose-translation');
     });
 }
 // ============================================================
@@ -14950,17 +15026,6 @@ const SHAPES_PROGRESS_KEY = 'goodStart_shapesProgress_v3';
 const SHAPES_QUESTIONS_PER_ROUND = 10;
 const SHAPES_PASS_RATIO = 0.7;
 
-function loadShapesProgress() {
-    try {
-        const raw = localStorage.getItem(SHAPES_PROGRESS_KEY);
-        const p = raw ? JSON.parse(raw) : null;
-        if (p && typeof p === 'object') return p;
-    } catch (e) {}
-    return {};
-}
-function saveShapesProgress(p) {
-    try { localStorage.setItem(SHAPES_PROGRESS_KEY, JSON.stringify(p)); } catch (e) {}
-}
 function sgShuffle(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
@@ -15052,12 +15117,14 @@ function renderShapesQuestion() {
 
     let optionsHtml = '';
     if (isSvgOptions) {
-        optionsHtml = options.map((opt, i) => {
+        optionsHtml = options.map((opt) => {
             const sd = SHAPES_L1_DATA.find(x => x.en === opt);
-            return `<button class="sg-option sg-option-svg" data-opt="${i}">${shapeSvg(sd.svg)}</button>`;
+            return `<button class="sg-option sg-option-svg">${shapeSvg(sd.svg)}</button>`;
         }).join('');
     } else {
-        optionsHtml = options.map((opt, i) => `<button class="sg-option" data-opt="${i}">${opt}</button>`).join('');
+        optionsHtml = options.map((opt, i) =>
+            `<button class="sg-option" data-opt="${i}">${opt}</button>`
+        ).join('');
     }
 
     const showBanner = s.justUnlocked && s.queue.length === s.totalUnique;
@@ -15125,7 +15192,7 @@ function renderShapesQuestion() {
                 s.queue.shift(); // Убираем вопрос из очереди
                 setTimeout(() => { s.answered = false; renderShapesQuestion(); }, 850);
             } else {
-                          
+                           
                 item.isRepeat = true; // Запоминаем, что была ошибка
                 speakWord(correctAnswer); // При ошибке всегда озвучиваем правильный ответ
                 
@@ -15138,23 +15205,22 @@ function renderShapesQuestion() {
             }
         });
     });
-
-    // === Голосовой ввод: только уровни 2 и 4 (ответ — название) ===
-    if (voiceAvailable() && (s.level === 2 || s.level === 4)) {
-        const sc = document.querySelector('.sg-container');
-        if (sc) {
-            attachVoiceButton(sc, {
-                lang: 'en-GB',
-                validAnswers: SHAPES_L1_DATA.map(x => x.en),
-                onMatch: () => {
-                    if (s.answered) return;
-                    const idx = options.indexOf(correctAnswer);
-                    const b = document.querySelector(`[data-opt="${idx}"]`);
-                    if (b) b.click();
-                }
-            });
-        }
+// === Голосовой ввод: уровни 2 и 4 (ответ — название) ===
+if (voiceAvailable() && (s.level === 2 || s.level === 4)) {
+    const sc = document.querySelector('.sg-container');
+    if (sc) {
+        attachVoiceButton(sc, {
+            lang: 'en-GB',
+            validAnswers: [correctAnswer],   // ← только правильный ответ
+            onMatch: () => {
+                if (s.answered) return;
+                const idx = options.indexOf(correctAnswer);
+                const b = document.querySelector(`[data-opt="${idx}"]`);
+                if (b) b.click();
+            }
+        });
     }
+}
 }
 
 // --- Финал раунда ---
@@ -15270,8 +15336,7 @@ const COLORS_DATA = [
     { en: 'brown',  ru: 'коричневый', hex: '#6D4C41' },
     { en: 'black',  ru: 'чёрный',     hex: '#212121' },
     { en: 'white',  ru: 'белый',      hex: '#FAFAFA' },
-    { en: 'grey',   ru: 'серый',      hex: '#9E9E9E' },
-    { en: 'gold',   ru: 'золотой',    hex: 'linear-gradient(135deg,#FFD700 0%,#FFA500 100%)' }
+    { en: 'grey',   ru: 'серый',      hex: '#9E9E9E' }
 ];
 
 const COLORS_QUESTIONS_PER_LEVEL = 10;
@@ -15471,22 +15536,24 @@ function renderColorsQuestion() {
         });
     });
 
-    // === Голосовой ввод: только уровень 3 (Назови цвет) ===
-    if (voiceAvailable() && s.level === 3) {
-        const sc = document.querySelector('.sg-container');
-        if (sc) {
-            attachVoiceButton(sc, {
-                lang: 'en-GB',
-                validAnswers: COLORS_DATA.map(c => c.en),
-                onMatch: () => {
-                    if (s.answered) return;
-                    const idx = options.indexOf(correctAnswer);
-                    const b = document.querySelector(`[data-opt="${idx}"]`);
-                    if (b) b.click();
-                }
-            });
-        }
+   // Голосовой ввод (только 3 уровень — сказать слово по-английски)
+// Голосовой ввод: на всех 3 уровнях ребёнок произносит АНГЛИЙСКОЕ СЛОВО
+// (на 1 и 2 уровнях слово → клик по цифре; на 3 уровне слово → клик по слову)
+if (voiceAvailable()) {
+    const sc = document.querySelector('.sg-container');
+    if (sc) {
+        attachVoiceButton(sc, {
+            lang: 'en-GB',
+            validAnswers: [item.en],   // ← только правильное английское слово
+            onMatch: () => {
+                if (s.answered) return;
+                const idx = options.indexOf(correctAnswer);
+                const b = document.querySelector(`[data-opt="${idx}"]`);
+                if (b) b.click();
+            }
+        });
     }
+ }
 }
 
 function finishColorsLevel() {
@@ -15568,6 +15635,292 @@ function finishColorsLevel() {
     if (restart) restart.addEventListener('click', () => startColorsLevel(1));
 }
 // ⬆⬆⬆ КОНЕЦ КОДА ИГРЫ "ЦВЕТА" ⬆⬆⬆
+// ============================================================
+// ИГРА: ЧИСЛА
+// ============================================================
+const NUMBER_GAME_DATA = [
+    { en: 'zero',        ru: 'ноль',          digit: '0'   },
+    { en: 'one',         ru: 'один',          digit: '1'   },
+    { en: 'two',         ru: 'два',           digit: '2'   },
+    { en: 'three',       ru: 'три',           digit: '3'   },
+    { en: 'four',        ru: 'четыре',        digit: '4'   },
+    { en: 'five',        ru: 'пять',          digit: '5'   },
+    { en: 'six',         ru: 'шесть',         digit: '6'   },
+    { en: 'seven',       ru: 'семь',          digit: '7'   },
+    { en: 'eight',       ru: 'восемь',        digit: '8'   },
+    { en: 'nine',        ru: 'девять',        digit: '9'   },
+    { en: 'ten',         ru: 'десять',        digit: '10'  },
+    { en: 'eleven',      ru: 'одиннадцать',   digit: '11'  },
+    { en: 'twelve',      ru: 'двенадцать',    digit: '12'  },
+    { en: 'thirteen',    ru: 'тринадцать',    digit: '13'  },
+    { en: 'fourteen',    ru: 'четырнадцать',  digit: '14'  },
+    { en: 'fifteen',     ru: 'пятнадцать',    digit: '15'  },
+    { en: 'sixteen',     ru: 'шестнадцать',   digit: '16'  },
+    { en: 'seventeen',   ru: 'семнадцать',    digit: '17'  },
+    { en: 'eighteen',    ru: 'восемнадцать',  digit: '18'  },
+    { en: 'nineteen',    ru: 'девятнадцать',  digit: '19'  },
+    { en: 'twenty',      ru: 'двадцать',      digit: '20'  },
+    { en: 'thirty',      ru: 'тридцать',      digit: '30'  },
+    { en: 'forty',       ru: 'сорок',         digit: '40'  },
+    { en: 'fifty',       ru: 'пятьдесят',     digit: '50'  },
+    { en: 'sixty',       ru: 'шестьдесят',    digit: '60'  },
+    { en: 'seventy',     ru: 'семьдесят',     digit: '70'  },
+    { en: 'eighty',      ru: 'восемьдесят',   digit: '80'  },
+    { en: 'ninety',      ru: 'девяносто',     digit: '90'  },
+    { en: 'one hundred', ru: 'сто',           digit: '100' }
+];
+
+const NUMBERS_QUESTIONS_PER_LEVEL = 10;
+const NUMBERS_PASS_RATIO = 0.7;
+
+let numbersState = null;
+
+function startNumbersGame() {
+    startNumbersLevel(1);
+}
+
+function startNumbersLevel(levelNum) {
+    const rounds = sgShuffle(NUMBER_GAME_DATA)
+        .slice(0, Math.min(NUMBERS_QUESTIONS_PER_LEVEL, NUMBER_GAME_DATA.length));
+    const queue = rounds.map(r => ({ ...r, isRepeat: false }));
+
+    numbersState = {
+        level: levelNum,
+        queue,
+        totalUnique: queue.length,
+        correctFirstTry: 0,
+        answered: false
+    };
+    renderNumbersQuestion();
+}
+
+function renderNumbersQuestion() {
+    const s = numbersState;
+    if (!s) return;
+    if (s.queue.length === 0) { finishNumbersLevel(); return; }
+
+    s.answered = false;
+    const item = s.queue[0];
+
+    let promptHtml = '';
+    let questionTitle = '';
+    let levelTitle = '';
+    let optionsAreDigits = false;
+    let correctAnswer;
+
+    if (s.level === 1) {
+        // Слух → цифра
+        promptHtml = `<div class="sg-audio-prompt">
+            <button class="sg-play-btn" id="numbers-play">🔊 Прослушать</button>
+        </div>`;
+        questionTitle = 'Какое число ты услышал?';
+        levelTitle = 'Слушай и выбирай';
+        optionsAreDigits = true;
+        correctAnswer = item.digit;
+    } else if (s.level === 2) {
+        // Слово → цифра
+        promptHtml = `<div class="sg-word-prompt">${item.en}</div>`;
+        questionTitle = 'Выбери число, которое соответствует слову';
+        levelTitle = 'Слово → число';
+        optionsAreDigits = true;
+        correctAnswer = item.digit;
+    } else {
+        // Цифра → слово
+        promptHtml = `<div class="numbers-big-digit">${item.digit}</div>`;
+        questionTitle = 'Как это число по-английски?';
+        levelTitle = 'Назови число';
+        optionsAreDigits = false;
+        correctAnswer = item.en;
+    }
+
+    const allPool = optionsAreDigits
+        ? NUMBER_GAME_DATA.map(n => n.digit)
+        : NUMBER_GAME_DATA.map(n => n.en);
+    const wrongPool = allPool.filter(x => x !== correctAnswer);
+    const wrongs = sgShuffle(wrongPool).slice(0, 3);
+    const options = sgShuffle([correctAnswer, ...wrongs]);
+
+    const optionsHtml = options.map((opt, i) => {
+        const cls = optionsAreDigits ? 'sg-option sg-number-option' : 'sg-option';
+        return `<button class="${cls}" data-opt="${i}">${opt}</button>`;
+    }).join('');
+
+    const mastered = s.totalUnique - s.queue.length;
+
+    contentEl.innerHTML = `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="numbers-back">← К играм</button>
+        </div>
+        <div class="games-header">
+            <h2>🔢 Уровень ${s.level} · ${levelTitle}</h2>
+            <p>Освоено: ${mastered} из ${s.totalUnique} · ✓ ${s.correctFirstTry}</p>
+        </div>
+        <div class="sg-container">
+            <div class="sg-prompt-card">
+                ${promptHtml}
+                <div class="sg-question">${questionTitle}</div>
+            </div>
+            <div class="sg-options">${optionsHtml}</div>
+        </div>
+        <style>
+            .numbers-big-digit {
+                font-size: 5rem;
+                font-weight: bold;
+                color: #2E7BAE;
+                text-align: center;
+                line-height: 1;
+                padding: 20px 0;
+                text-shadow: 2px 2px 0 #FFF, 4px 4px 12px rgba(79,168,216,0.3);
+            }
+            .sg-number-option {
+                font-size: 1.6rem;
+                padding: 20px 14px;
+            }
+        </style>
+    `;
+
+    if (s.level === 1) {
+        const playFn = () => speakWord(item.en);
+        setTimeout(playFn, 300);
+        document.getElementById('numbers-play').addEventListener('click', playFn);
+    }
+
+    document.getElementById('numbers-back').addEventListener('click', () => {
+        if (s.correctFirstTry > 0) {
+            if (!confirm('Выйти из игры? Прогресс раунда не сохранится.')) return;
+        }
+        numbersState = null;
+        renderKidsGameList();
+    });
+
+    document.querySelectorAll('.sg-option').forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+            if (s.answered) return;
+            s.answered = true;
+
+            const isCorrect = options[i] === correctAnswer;
+
+            document.querySelectorAll('.sg-option').forEach((b, j) => {
+                b.disabled = true;
+                if (options[j] === correctAnswer) b.classList.add('correct');
+                else if (j === i) b.classList.add('wrong');
+            });
+
+            if (isCorrect) {
+                if (!item.isRepeat) s.correctFirstTry++;
+                if (s.level !== 1) speakWord(item.en);
+                s.queue.shift();
+                setTimeout(() => { s.answered = false; renderNumbersQuestion(); }, 900);
+            } else {
+                item.isRepeat = true;
+                speakWord(item.en);
+                setTimeout(() => {
+                    s.queue.shift();
+                    s.queue.push(item);
+                    s.answered = false;
+                    renderNumbersQuestion();
+                }, 1500);
+            }
+        });
+    });
+
+    // Голосовой ввод: на всех 3 уровнях ребёнок произносит АНГЛИЙСКОЕ СЛОВО
+    if (voiceAvailable()) {
+        const sc = document.querySelector('.sg-container');
+        if (sc) {
+            attachVoiceButton(sc, {
+                lang: 'en-GB',
+                validAnswers: [item.en],   // только правильное английское слово
+                onMatch: () => {
+                    if (s.answered) return;
+                    const idx = options.indexOf(correctAnswer);
+                    const b = document.querySelector(`[data-opt="${idx}"]`);
+                    if (b) b.click();
+                }
+            });
+        }
+    }
+}
+
+function finishNumbersLevel() {
+    const s = numbersState;
+    if (!s) return;
+
+    const total = s.totalUnique;
+    const need = Math.ceil(total * NUMBERS_PASS_RATIO);
+    const passed = s.correctFirstTry >= need;
+    const percent = Math.round((s.correctFirstTry / total) * 100);
+    const isLast = (s.level === 3);
+
+    let emoji = '😔', message = 'Попробуй ещё раз!';
+    if (passed) {
+        if (percent === 100)   { emoji = '🏆'; message = 'Идеально!'; }
+        else if (percent >= 90){ emoji = '🌟'; message = 'Превосходно!'; }
+        else                   { emoji = '🎉'; message = 'Отличная работа!'; }
+    } else if (percent >= 50)  { emoji = '💪'; message = 'Почти получилось!'; }
+
+    let subtitle = '';
+    let primaryBtn = '';
+    const nextTitles = ['', 'Слово → число', 'Назови число'];
+
+    if (!isLast) {
+        if (passed) {
+            subtitle = `Уровень ${s.level} пройден! Дальше — уровень ${s.level + 1}: «${nextTitles[s.level]}»`;
+            primaryBtn = `<button class="sg-btn-primary" id="numbers-next">▶ Уровень ${s.level + 1}: ${nextTitles[s.level]}</button>`;
+        } else {
+            subtitle = `Чтобы перейти дальше, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="numbers-retry">🔄 Попробовать снова</button>`;
+        }
+    } else {
+        if (passed) {
+            subtitle = 'Ты прошёл все три уровня игры «Числа»! 🎉';
+            primaryBtn = `<button class="sg-btn-primary" id="numbers-restart">🔄 Играть заново</button>`;
+        } else {
+            subtitle = `Чтобы завершить игру, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="numbers-retry">🔄 Попробовать снова</button>`;
+        }
+    }
+
+    contentEl.innerHTML = `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="numbers-back">← К играм</button>
+        </div>
+        <div class="games-header">
+            <h2>Уровень ${s.level}${isLast ? ' · финальный' : ''}</h2>
+        </div>
+        <div class="sg-container">
+            <div class="sg-complete">
+                <div class="sg-complete-emoji">${emoji}</div>
+                <h2>${message}</h2>
+                <div class="sg-complete-score">${s.correctFirstTry} / ${total} · ${percent}%</div>
+                <div class="sg-complete-status ${passed ? 'passed' : 'failed'}">
+                    ${passed ? '✓ Уровень пройден' : `✗ Не хватило ${need - s.correctFirstTry} правильных`}
+                </div>
+                <p style="color:#6A6A6A; margin-bottom:20px;">${subtitle}</p>
+                <div class="sg-complete-actions">
+                    ${primaryBtn}
+                    <button class="sg-btn-secondary" id="numbers-back-games">← К играм</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const backToGames = () => { numbersState = null; renderKidsGameList(); };
+    document.getElementById('numbers-back').addEventListener('click', backToGames);
+    document.getElementById('numbers-back-games').addEventListener('click', backToGames);
+
+    const retry = document.getElementById('numbers-retry');
+    if (retry) retry.addEventListener('click', () => startNumbersLevel(s.level));
+
+    const next = document.getElementById('numbers-next');
+    if (next) next.addEventListener('click', () => startNumbersLevel(s.level + 1));
+
+    const restart = document.getElementById('numbers-restart');
+    if (restart) restart.addEventListener('click', () => startNumbersLevel(1));
+}
+// ============================================================
+// КОНЕЦ ИГРЫ "ЧИСЛА"
+// ============================================================
 
 
 // ============================================================
@@ -15709,6 +16062,7 @@ function attachVoiceButton(container, opts) {
     }
 
     function startPress(e) {
+        if (e && typeof e.button === 'number' && e.button !== 0) return;   // только левая кнопка
         if (e) e.preventDefault();
         if (!voiceSupport.supported || !voiceSupport.secure) return;
         if (!voiceEnabled) { showVoiceToast('Голосовой ввод отключён', false); return; }
