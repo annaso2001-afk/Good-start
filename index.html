@@ -1490,6 +1490,39 @@ body.dark-theme .fc-emoji i {
     .voice-toggle { right: 200px !important; width: 48px !important; height: 48px !important; font-size: 1.2rem !important; }
     .voice-btn { padding: 12px 20px; font-size: 0.9rem; }
 }
+/* === НАВИГАЦИЯ ПО УРОВНЯМ (общие кнопки) === */
+.level-jump-bar {
+    display: flex; 
+    justify-content: center; 
+    gap: 8px;
+    margin: 18px 0 8px; 
+    flex-wrap: wrap;
+}
+.level-jump-btn {
+    padding: 8px 16px;
+    border: 3px solid #FFF;
+    border-radius: 12px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #FFF;
+    color: #2E7BAE;
+    box-shadow: 0 3px 8px rgba(79,168,216,0.2);
+    min-width: 42px;
+}
+.level-jump-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 12px rgba(79,168,216,0.35);
+}
+.level-jump-btn.active {
+    background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
+    color: #FFF;
+    transform: scale(1.08);
+    box-shadow: 0 5px 12px rgba(79,168,216,0.4);
+    cursor: default;
+}
 </style>
 </head>
 <body>
@@ -1547,6 +1580,14 @@ body.dark-theme .fc-emoji i {
 
 
 <script>
+// Безопасное экранирование строки для вставки в HTML-атрибут (двойные кавычки)
+function escapeAttr(s) {
+    return String(s)
+        .replace(/&/g,  '&amp;')
+        .replace(/"/g,  '&quot;')
+        .replace(/</g,  '&lt;')
+        .replace(/>/g,  '&gt;');
+}
 // ============================================================
 // ПОЛЬЗОВАТЕЛИ
 // ============================================================
@@ -1574,7 +1615,10 @@ function saveUsers(list) {
 }
 
 let _activeUserCache = null;
-
+// Предварительное объявление. Реальное значение установится ниже,
+// когда выполнится блок инициализации голосовых настроек.
+// Нужно, чтобы setActiveUser мог безопасно обращаться к voiceEnabled.
+let voiceEnabled = false;
 function getActiveUser() {
     if (_activeUserCache) return _activeUserCache;
     const users = loadUsers();
@@ -1587,13 +1631,25 @@ function invalidateActiveUserCache() {
     _activeUserCache = null;
 }
 function setActiveUser(id) {
+    // 1. Сначала переключаемся на нового пользователя
     invalidateActiveUserCache();
     localStorage.setItem(ACTIVE_USER_KEY, id);
-    localStorage.setItem(PICKER_SEEN_KEY, '1');
 
-    // Скрываем экран выбора
+    // 2. Теперь читаем настройки — они уже от нового пользователя
+    voiceEnabled = loadVoiceEnabled();
+    const voiceBtn = document.getElementById('voice-toggle');
+    if (voiceBtn) {
+        voiceBtn.textContent = voiceEnabled ? '🎤' : '🚫';
+        voiceBtn.classList.toggle('muted', !voiceEnabled);
+        voiceBtn.title = voiceEnabled
+            ? 'Голосовой ввод включён'
+            : 'Голосовой ввод отключён';
+    }
+
+    localStorage.setItem(PICKER_SEEN_KEY, '1');
     const overlay = document.getElementById('user-picker-overlay');
     if (overlay) overlay.remove();
+    
 
     // Скрываем модалку создания пользователя (если открыта)
     const modal = document.getElementById('user-modal-bg');
@@ -1758,7 +1814,6 @@ let _nativeSetItem, _nativeGetItem, _nativeRemoveItem;
 // UI: экран выбора + кнопка смены + модалка
 // ============================================================
 function showUserPicker() {
-    const users = loadUsers();
 
     // Удаляем старый, если был
     const old = document.getElementById('user-picker-overlay');
@@ -8691,25 +8746,26 @@ function renderWordsList(container, isSidebar) {
         container.innerHTML = `<div class="sidebar-empty">Словарик пуст.<br>Выдели любое слово на странице и нажми ➕ в поп-апе</div>`;
         return;
     }
-    container.innerHTML = myDictionary.map(item => {
-        const langFlag = item.lang === 'ru' ? '🇷🇺 ' : (item.lang === 'en' ? '🇬🇧 ' : '');
-        return `
-        <div class="dict-word" data-word-card="${item.word}">
-            <div class="dict-word-header">
-            <div class="dict-word-en">${langFlag}${getDisplayEn(item.word)}</div>
-                <div class="dict-word-actions">
-                    <button data-speak="${item.word}" title="Озвучить">🔊</button>
-                    <button data-refresh="${item.word}" title="Обновить перевод">🔄</button>
-                    <button data-edit="${item.word}" title="Редактировать">✏️</button>
-                    <button data-remove="${item.word}" title="Удалить">❌</button>
-                </div>
-            </div>
-            <div class="dict-word-translation" data-translation-for="${item.word}">
-                <span class="loading-translation">⏳ загрузка перевода...</span>
+container.innerHTML = myDictionary.map(item => {
+    const langFlag = item.lang === 'ru' ? '🇷🇺 ' : (item.lang === 'en' ? '🇬🇧 ' : '');
+    const safeWord = escapeAttr(item.word);              // ← новое
+    return `
+    <div class="dict-word" data-word-card="${safeWord}">
+        <div class="dict-word-header">
+            <div class="dict-word-en">${langFlag}${escapeAttr(getDisplayEn(item.word))}</div>
+            <div class="dict-word-actions">
+                <button data-speak="${safeWord}"   title="Озвучить">🔊</button>
+                <button data-refresh="${safeWord}" title="Обновить перевод">🔄</button>
+                <button data-edit="${safeWord}"    title="Редактировать">✏️</button>
+                <button data-remove="${safeWord}"  title="Удалить">❌</button>
             </div>
         </div>
-    `;
-    }).join('');
+        <div class="dict-word-translation" data-translation-for="${safeWord}">
+            <span class="loading-translation">⏳ загрузка перевода...</span>
+        </div>
+    </div>
+`;
+}).join('');
 
       container.querySelectorAll('[data-speak]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -10711,7 +10767,8 @@ const adultsGames = [
     { id: 'build-word',         icon: '🔤', title: 'Собери слово',       desc: 'Составь слово из букв' },
     { id: 'wordsearch',         icon: '🔍', title: 'Филворд',            desc: 'Найди спрятанные слова' },
     { id: 'hangman',            icon: '🪢', title: 'Виселица',           desc: 'Угадай слово по буквам' },
-    { id: 'preposition',        icon: '🔗', title: 'Подставь предлог',   desc: 'Вставь правильный предлог' }
+    { id: 'preposition',        icon: '🔗', title: 'Подставь предлог',   desc: 'Вставь правильный предлог' },
+    { id: 'clock', icon: '🕐', title: 'Часы', desc: 'Учимся называть время' }
 ];
 
 function renderGamesSection() {
@@ -10886,6 +10943,10 @@ function renderAdultsGameList() {
             if (gameId === 'hangman') {
                 renderAdultsHangmanModePicker();
                 return;
+            }
+            if (gameId === 'clock') {
+            startClockGame();
+             return;
             }
 
 
@@ -11125,7 +11186,7 @@ if (gameId === 'flashcards') {
     }
     renderWordSearchGame(words);
 } else if (gameId === 'choose-translation') {
-    renderChooseTranslationModePicker(words);
+    startCtGame(words);
 } else if (gameId === 'build-word') {
     if (mode === 'phrases') {
         alert('«Собери слово» работает только со словами — переключаю на «Слова».');
@@ -11158,7 +11219,7 @@ function startAdultsGame(gameId, words) {
     } else if (gameId === 'wordsearch') {
         renderWordSearchGame(words);
     } else if (gameId === 'choose-translation') {
-        renderChooseTranslationModePicker(words);
+        startCtGame(words);
     } else if (gameId === 'build-word') {
         renderBuildWordGame(words, currentGameSource);
     } else if (gameId === 'hangman') {
@@ -11822,7 +11883,6 @@ function renderTrStage3_Reproduce() {
                     finished = true;
                     s.taskAnswered = true;
                     slotsEl.classList.add('correct');
-                    speakWord(clean);
                     setTimeout(() => trainingCorrect(), 800);
                 } else {
                     s.taskAnswered = true;
@@ -11897,7 +11957,6 @@ function renderTrTypingTask() {
 
         if (val === target) {
             input.classList.add('correct');
-            speakWord(word.en);
             setTimeout(() => trainingCorrect(), 700);
         } else {
             input.classList.add('wrong');
@@ -12233,7 +12292,7 @@ function startGameWithSource(gameId, source) {
     } else if (gameId === 'wordsearch') {
         renderWordSearchGame(words);
     } else if (gameId === 'choose-translation') {
-        renderChooseTranslationModePicker(words);
+        startCtGame(words);
     } else if (gameId === 'build-word') {
         renderBuildWordGame(words, source);
     } else if (gameId === 'hangman') {
@@ -12750,7 +12809,7 @@ function hmPrepare(words, source) {
                 ru: w.ru || '',
                 emoji: w.emoji || '📘',
                 riddle: riddle,
-                categoryTitle: findHintForWord(w.en).title
+                categoryTitle: findHintForWord(w.en || '').title
             };
         })
         .filter(w => {
@@ -12761,6 +12820,8 @@ function hmPrepare(words, source) {
 }
 // Определяет «намёк» для слова: категорию, к которой оно относится
 function findHintForWord(en) {
+    if (!en) return { title: 'Слово' };
+
     const key = en.toLowerCase().trim();
 
     // Сначала ищем в «Базе»
@@ -12790,16 +12851,6 @@ function findHintForWord(en) {
     // Если ничего не нашли — просто «Слово»
     return { title: 'Слово' };
 }
-
-// ============================================================
-// Асинхронная подгрузка AI-загадки
-// ============================================================
-function loadRiddleForCurrentGame() {
-    // AI-генерация отключена. Загадки берутся только из RIDDLES_RU.
-    // Если загадки нет — в подсказке покажется эмодзи слова.
-    return;
-}
-
 function renderHangmanGame(words, source, isFriendMode) {
     const filteredWords = isFriendMode ? words : filterNounsOnly(words);
     const clean = hmPrepare(filteredWords);
@@ -13291,7 +13342,6 @@ function handleHangmanGuess(letter) {
 
     if (s.word.includes(letter)) {
         s.guessedLetters.add(letter);
-        speakWord(letter);
     } else {
         s.wrongLetters.add(letter);
     }
@@ -13302,9 +13352,6 @@ function handleHangmanGuess(letter) {
     const revealed = s.word.split('').every(ch =>
         !/[A-Z]/.test(ch) || s.guessedLetters.has(ch)
     );
-    if (revealed) {
-        speakWord(s.word);
-    }
     // При поражении доска уже перерисована с результатом — тут делать нечего
 }
 // ============================================================
@@ -13561,7 +13608,6 @@ function renderBuildWordQuestion() {
                     if (assembled.toLowerCase() === s.currentWord.en.toLowerCase()) {
                         s.finished = true;
                         s.score++;
-                        speakWord(s.currentWord.en);
                         const slotsEl = document.getElementById('bw-slots');
                         if (slotsEl) slotsEl.classList.add('correct');
                         setTimeout(() => {
@@ -13594,7 +13640,6 @@ function placeLetter(letterId) {
         if (assembled.toLowerCase() === s.currentWord.en.toLowerCase()) {
             s.finished = true;
             s.score++;
-            speakWord(s.currentWord.en);
             const slotsEl = document.getElementById('bw-slots');
             if (slotsEl) slotsEl.classList.add('correct');
             setTimeout(() => {
@@ -13944,8 +13989,6 @@ function handlePpAnswer(optIndex) {
     if (selected.correct) {
         s.score++;
         if (currentWord && currentWord.en) speakWord(currentWord.en);
-    } else {
-        if (currentWord && currentWord.en) speakWord(currentWord.en);
     }
 
     setTimeout(() => {
@@ -14001,369 +14044,545 @@ function renderPpComplete() {
 // ============================================================
 // ИГРА: ВЫБЕРИ ПЕРЕВОД
 // ============================================================
+// ============================================================
+// КАРТИНКИ (SVG) ДЛЯ РЕЖИМА «СЛОВО → КАРТИНКА»
+// ============================================================
+const CT_PICTURES = {
+    // === ПОСУДА ===
+    glass: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M32 20 L36 88 L64 88 L68 20 Z" fill="#E0F2FC" stroke="#2E7BAE" stroke-width="3" stroke-linejoin="round"/><path d="M35 50 L37 85 L63 85 L65 50 Z" fill="#7FC4E8" opacity="0.7"/><ellipse cx="50" cy="20" rx="18" ry="3" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="3"/></svg>`,
+    cup: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="18" y="32" width="55" height="55" rx="6" fill="#FFB073" stroke="#E06A1E" stroke-width="3"/><path d="M73 42 Q 92 42 92 58 Q 92 74 73 74" fill="none" stroke="#E06A1E" stroke-width="4" stroke-linecap="round"/><ellipse cx="45" cy="32" rx="27" ry="5" fill="#FFE9B8" stroke="#E06A1E" stroke-width="3"/></svg>`,
+    kettle: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="65" rx="32" ry="22" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3"/><rect x="38" y="22" width="24" height="12" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3"/><path d="M82 55 Q 96 55 92 42" fill="none" stroke="#2E7BAE" stroke-width="4" stroke-linecap="round"/><path d="M18 58 Q 5 55 12 42" fill="none" stroke="#2E7BAE" stroke-width="4" stroke-linecap="round"/><ellipse cx="50" cy="22" rx="12" ry="2" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="2"/></svg>`,
+    cupboard: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="20" y="12" width="60" height="78" rx="4" fill="#A66D3A" stroke="#5C3A1A" stroke-width="3"/><line x1="50" y1="12" x2="50" y2="90" stroke="#5C3A1A" stroke-width="2"/><circle cx="44" cy="50" r="2.5" fill="#FFD700"/><circle cx="56" cy="50" r="2.5" fill="#FFD700"/></svg>`,
+    pot: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M22 40 L22 80 Q 50 90 78 80 L78 40 Z" fill="#666" stroke="#333" stroke-width="3"/><ellipse cx="50" cy="40" rx="28" ry="6" fill="#888" stroke="#333" stroke-width="3"/><line x1="18" y1="45" x2="12" y2="45" stroke="#333" stroke-width="4" stroke-linecap="round"/><line x1="82" y1="45" x2="88" y2="45" stroke="#333" stroke-width="4" stroke-linecap="round"/></svg>`,
+
+    // === ФРУКТЫ И ЕДА ===
+    apple: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M50 30 Q 25 25 22 55 Q 22 85 50 88 Q 78 85 78 55 Q 75 25 50 30 Z" fill="#E53935" stroke="#8B0000" stroke-width="3"/><path d="M50 30 Q 52 15 62 15" fill="none" stroke="#2E7D32" stroke-width="3" stroke-linecap="round"/><ellipse cx="62" cy="20" rx="7" ry="4" fill="#4CAF50" transform="rotate(-20 62 20)"/></svg>`,
+    banana: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M20 30 Q 30 75 75 80 Q 85 75 80 65 Q 55 65 40 30 Z" fill="#FDD835" stroke="#F57C00" stroke-width="3" stroke-linejoin="round"/><path d="M20 30 L22 22" stroke="#5D4037" stroke-width="3" stroke-linecap="round"/></svg>`,
+    orange: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><circle cx="50" cy="55" r="32" fill="#FB8C00" stroke="#E65100" stroke-width="3"/><circle cx="40" cy="45" r="6" fill="#FFCC80" opacity="0.6"/><path d="M50 23 Q 52 12 62 15" fill="none" stroke="#2E7D32" stroke-width="3" stroke-linecap="round"/><ellipse cx="60" cy="18" rx="8" ry="4" fill="#4CAF50" transform="rotate(-25 60 18)"/></svg>`,
+    cherry: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M35 30 Q 50 45 65 30" fill="none" stroke="#2E7D32" stroke-width="3"/><path d="M50 30 L55 20" stroke="#2E7D32" stroke-width="3" stroke-linecap="round"/><circle cx="35" cy="70" r="15" fill="#E53935" stroke="#8B0000" stroke-width="3"/><circle cx="68" cy="72" r="15" fill="#E53935" stroke="#8B0000" stroke-width="3"/></svg>`,
+    lemon: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="55" rx="32" ry="22" fill="#FDD835" stroke="#F57C00" stroke-width="3"/><path d="M18 55 L12 52 L18 58 Z" fill="#FDD835" stroke="#F57C00" stroke-width="1.5" stroke-linejoin="round"/><path d="M82 55 L88 52 L82 58 Z" fill="#FDD835" stroke="#F57C00" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
+    strawberry: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M50 90 Q 20 65 25 45 Q 30 30 50 25 Q 70 30 75 45 Q 80 65 50 90 Z" fill="#E53935" stroke="#8B0000" stroke-width="3"/><path d="M30 30 L50 20 L70 30 L50 35 Z" fill="#4CAF50" stroke="#2E7D32" stroke-width="2"/><circle cx="42" cy="50" r="1.5" fill="#FFF"/><circle cx="58" cy="50" r="1.5" fill="#FFF"/><circle cx="50" cy="60" r="1.5" fill="#FFF"/></svg>`,
+    cake: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="20" y="55" width="60" height="30" rx="3" fill="#FFB073" stroke="#E06A1E" stroke-width="3"/><path d="M20 55 Q 50 65 80 55" fill="#FFF8E1" stroke="#E06A1E" stroke-width="2"/><rect x="45" y="30" width="6" height="20" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="1.5"/><ellipse cx="48" cy="28" rx="4" ry="6" fill="#FDD835" stroke="#F57C00" stroke-width="1"/></svg>`,
+    pizza: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M50 15 L20 80 L80 80 Z" fill="#FFE082" stroke="#F57C00" stroke-width="3" stroke-linejoin="round"/><path d="M30 72 L70 72" stroke="#D84315" stroke-width="4"/><circle cx="42" cy="52" r="4" fill="#D84315"/><circle cx="58" cy="52" r="4" fill="#D84315"/><circle cx="50" cy="65" r="4" fill="#D84315"/><circle cx="38" cy="62" r="3" fill="#388E3C"/><circle cx="62" cy="62" r="3" fill="#388E3C"/><circle cx="50" cy="42" r="3" fill="#388E3C"/></svg>`,
+    "ice cream": `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M35 50 L50 88 L65 50 Z" fill="#FFE0B2" stroke="#8B5A2B" stroke-width="2"/><circle cx="50" cy="38" r="16" fill="#EC407A" stroke="#AD1457" stroke-width="2"/><circle cx="42" cy="45" r="10" fill="#FFE082" stroke="#F57C00" stroke-width="2"/><circle cx="58" cy="45" r="10" fill="#A1887F" stroke="#4E342E" stroke-width="2"/></svg>`,
+
+    // === ТРАНСПОРТ ===
+    car: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M15 65 L20 45 L35 45 L42 35 L65 35 L75 45 L85 45 L85 65 Z" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3" stroke-linejoin="round"/><circle cx="30" cy="68" r="9" fill="#333" stroke="#000" stroke-width="2"/><circle cx="30" cy="68" r="4" fill="#999"/><circle cx="72" cy="68" r="9" fill="#333" stroke="#000" stroke-width="2"/><circle cx="72" cy="68" r="4" fill="#999"/></svg>`,
+    bus: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="10" y="30" width="80" height="45" rx="5" fill="#FDD835" stroke="#F57C00" stroke-width="3"/><rect x="15" y="35" width="18" height="15" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="2"/><rect x="37" y="35" width="18" height="15" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="2"/><rect x="59" y="35" width="18" height="15" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="2"/><circle cx="28" cy="78" r="7" fill="#333" stroke="#000" stroke-width="2"/><circle cx="72" cy="78" r="7" fill="#333" stroke="#000" stroke-width="2"/></svg>`,
+    bike: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><circle cx="25" cy="65" r="17" fill="none" stroke="#333" stroke-width="3"/><circle cx="75" cy="65" r="17" fill="none" stroke="#333" stroke-width="3"/><line x1="25" y1="65" x2="50" y2="40" stroke="#E53935" stroke-width="3"/><line x1="50" y1="40" x2="75" y2="65" stroke="#E53935" stroke-width="3"/><line x1="50" y1="40" x2="40" y2="65" stroke="#E53935" stroke-width="3"/><line x1="40" y1="65" x2="25" y2="65" stroke="#E53935" stroke-width="3"/><line x1="55" y1="30" x2="45" y2="30" stroke="#333" stroke-width="3" stroke-linecap="round"/><line x1="50" y1="40" x2="50" y2="30" stroke="#E53935" stroke-width="3"/></svg>`,
+    plane: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M15 55 L50 45 L85 55 L85 60 L50 58 L15 60 Z" fill="#E0F2FC" stroke="#2E7BAE" stroke-width="3" stroke-linejoin="round"/><path d="M50 45 L50 30 L58 30 L58 47" fill="#7FC4E8" stroke="#2E7BAE" stroke-width="2" stroke-linejoin="round"/><path d="M30 58 L30 70 L45 65 L45 58" fill="#7FC4E8" stroke="#2E7BAE" stroke-width="2"/><path d="M55 58 L55 65 L70 70 L70 58" fill="#7FC4E8" stroke="#2E7BAE" stroke-width="2"/></svg>`,
+    ship: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M15 65 L85 65 L75 82 L25 82 Z" fill="#8B5A2B" stroke="#4E2C11" stroke-width="3" stroke-linejoin="round"/><rect x="42" y="25" width="16" height="40" fill="#FFF8E1" stroke="#333" stroke-width="2"/><polygon points="58,25 58,55 80,55" fill="#FFF8E1" stroke="#333" stroke-width="2" stroke-linejoin="round"/><line x1="50" y1="15" x2="50" y2="25" stroke="#333" stroke-width="3"/></svg>`,
+    train: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="15" y="40" width="70" height="35" rx="4" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3"/><rect x="22" y="46" width="15" height="15" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="1.5"/><rect x="42" y="46" width="15" height="15" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="1.5"/><rect x="62" y="46" width="15" height="15" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="1.5"/><circle cx="30" cy="80" r="7" fill="#333" stroke="#000" stroke-width="2"/><circle cx="70" cy="80" r="7" fill="#333" stroke="#000" stroke-width="2"/></svg>`,
+
+    // === ЖИВОТНЫЕ ===
+    cat: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="62" rx="30" ry="25" fill="#FFB073" stroke="#E06A1E" stroke-width="3"/><path d="M30 42 L28 22 L45 35 Z" fill="#FFB073" stroke="#E06A1E" stroke-width="3" stroke-linejoin="round"/><path d="M70 42 L72 22 L55 35 Z" fill="#FFB073" stroke="#E06A1E" stroke-width="3" stroke-linejoin="round"/><circle cx="40" cy="57" r="3" fill="#333"/><circle cx="60" cy="57" r="3" fill="#333"/><path d="M45 70 Q 50 74 55 70" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round"/></svg>`,
+    dog: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="60" rx="28" ry="24" fill="#8B5A2B" stroke="#4E2C11" stroke-width="3"/><ellipse cx="28" cy="45" rx="10" ry="16" fill="#6D4C41" stroke="#4E2C11" stroke-width="2"/><ellipse cx="72" cy="45" rx="10" ry="16" fill="#6D4C41" stroke="#4E2C11" stroke-width="2"/><circle cx="40" cy="55" r="3" fill="#333"/><circle cx="60" cy="55" r="3" fill="#333"/><ellipse cx="50" cy="68" rx="8" ry="5" fill="#333"/><circle cx="50" cy="65" r="3" fill="#222"/></svg>`,
+    bird: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="55" rx="25" ry="18" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3"/><circle cx="70" cy="45" r="12" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3"/><circle cx="75" cy="42" r="2.5" fill="#333"/><polygon points="82,45 92,48 82,50" fill="#FDD835" stroke="#F57C00" stroke-width="2"/><path d="M40 55 Q 25 50 20 60 Q 30 65 40 60" fill="#7FC4E8" stroke="#2E7BAE" stroke-width="2"/></svg>`,
+    fish: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="48" cy="50" rx="30" ry="18" fill="#FB8C00" stroke="#E65100" stroke-width="3"/><polygon points="78,50 92,38 92,62" fill="#FB8C00" stroke="#E65100" stroke-width="3" stroke-linejoin="round"/><circle cx="32" cy="46" r="3" fill="#333"/><path d="M45 50 Q 55 55 65 50" fill="none" stroke="#E65100" stroke-width="2"/></svg>`,
+    elephant: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="55" rx="30" ry="25" fill="#9E9E9E" stroke="#616161" stroke-width="3"/><ellipse cx="28" cy="52" rx="12" ry="15" fill="#757575" stroke="#424242" stroke-width="2"/><circle cx="60" cy="48" r="3" fill="#333"/><path d="M70 60 Q 75 80 65 88 Q 60 82 62 70" fill="#9E9E9E" stroke="#616161" stroke-width="3" stroke-linejoin="round"/></svg>`,
+    lion: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><circle cx="50" cy="55" r="30" fill="#FB8C00" stroke="#E65100" stroke-width="3"/><circle cx="50" cy="55" r="20" fill="#FFE082" stroke="#E65100" stroke-width="2"/><circle cx="42" cy="52" r="3" fill="#333"/><circle cx="58" cy="52" r="3" fill="#333"/><ellipse cx="50" cy="63" rx="4" ry="2.5" fill="#333"/></svg>`,
+    mouse: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="62" rx="26" ry="20" fill="#BDBDBD" stroke="#616161" stroke-width="3"/><circle cx="30" cy="48" r="10" fill="#BDBDBD" stroke="#616161" stroke-width="2"/><circle cx="70" cy="48" r="10" fill="#BDBDBD" stroke="#616161" stroke-width="2"/><circle cx="42" cy="58" r="2.5" fill="#333"/><circle cx="58" cy="58" r="2.5" fill="#333"/><circle cx="50" cy="66" r="2.5" fill="#E91E63"/></svg>`,
+    butterfly: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="30" cy="45" rx="18" ry="22" fill="#E91E63" stroke="#880E4F" stroke-width="2" transform="rotate(-30 30 45)"/><ellipse cx="70" cy="45" rx="18" ry="22" fill="#E91E63" stroke="#880E4F" stroke-width="2" transform="rotate(30 70 45)"/><ellipse cx="30" cy="68" rx="15" ry="15" fill="#F06292" stroke="#880E4F" stroke-width="2" transform="rotate(20 30 68)"/><ellipse cx="70" cy="68" rx="15" ry="15" fill="#F06292" stroke="#880E4F" stroke-width="2" transform="rotate(-20 70 68)"/><line x1="50" y1="30" x2="50" y2="80" stroke="#333" stroke-width="3" stroke-linecap="round"/></svg>`,
+
+    // === ШКОЛА ===
+    book: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="20" y="25" width="60" height="55" rx="3" fill="#E53935" stroke="#8B0000" stroke-width="3"/><rect x="26" y="30" width="48" height="45" fill="#FFF8E1" stroke="#8B0000" stroke-width="1.5"/><line x1="30" y1="40" x2="70" y2="40" stroke="#999" stroke-width="1.5"/><line x1="30" y1="48" x2="70" y2="48" stroke="#999" stroke-width="1.5"/><line x1="30" y1="56" x2="60" y2="56" stroke="#999" stroke-width="1.5"/></svg>`,
+    pencil: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M20 75 L70 25 L80 35 L30 85 Z" fill="#FDD835" stroke="#F57C00" stroke-width="3" stroke-linejoin="round"/><path d="M20 75 L30 85 L12 88 Z" fill="#FFE9B8" stroke="#F57C00" stroke-width="3" stroke-linejoin="round"/><path d="M70 25 L80 35" stroke="#333" stroke-width="3" stroke-linecap="round"/></svg>`,
+    ruler: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="10" y="40" width="80" height="20" fill="#FFE082" stroke="#F57C00" stroke-width="3"/><line x1="20" y1="40" x2="20" y2="50" stroke="#333" stroke-width="2"/><line x1="30" y1="40" x2="30" y2="52" stroke="#333" stroke-width="2"/><line x1="40" y1="40" x2="40" y2="50" stroke="#333" stroke-width="2"/><line x1="50" y1="40" x2="50" y2="55" stroke="#333" stroke-width="2"/><line x1="60" y1="40" x2="60" y2="50" stroke="#333" stroke-width="2"/><line x1="70" y1="40" x2="70" y2="52" stroke="#333" stroke-width="2"/><line x1="80" y1="40" x2="80" y2="50" stroke="#333" stroke-width="2"/></svg>`,
+
+    // === ПРИРОДА ===
+    sun: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><circle cx="50" cy="50" r="22" fill="#FDD835" stroke="#F57C00" stroke-width="3"/><g stroke="#FDD835" stroke-width="3" stroke-linecap="round"><line x1="50" y1="10" x2="50" y2="20"/><line x1="50" y1="80" x2="50" y2="90"/><line x1="10" y1="50" x2="20" y2="50"/><line x1="80" y1="50" x2="90" y2="50"/><line x1="22" y1="22" x2="29" y2="29"/><line x1="71" y1="71" x2="78" y2="78"/><line x1="22" y1="78" x2="29" y2="71"/><line x1="71" y1="29" x2="78" y2="22"/></g></svg>`,
+    moon: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M65 20 Q 30 25 30 55 Q 30 85 65 80 Q 45 70 45 50 Q 45 30 65 20 Z" fill="#FFE082" stroke="#F57C00" stroke-width="3" stroke-linejoin="round"/></svg>`,
+    star: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><polygon points="50,15 60,42 88,42 66,60 74,88 50,70 26,88 34,60 12,42 40,42" fill="#FDD835" stroke="#F57C00" stroke-width="3" stroke-linejoin="round"/></svg>`,
+    cloud: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M25 65 Q 15 65 15 55 Q 15 45 25 45 Q 25 30 40 30 Q 50 20 62 30 Q 75 28 78 42 Q 88 42 88 52 Q 88 65 75 65 Z" fill="#E0F2FC" stroke="#7FC4E8" stroke-width="3" stroke-linejoin="round"/></svg>`,
+    house: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><polygon points="50,20 15,50 20,50 20,85 80,85 80,50 85,50" fill="#FFB073" stroke="#E06A1E" stroke-width="3" stroke-linejoin="round"/><rect x="42" y="60" width="16" height="25" fill="#8B5A2B" stroke="#4E2C11" stroke-width="2"/><rect x="25" y="55" width="12" height="12" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="2"/><rect x="63" y="55" width="12" height="12" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="2"/></svg>`,
+    tree: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="45" y="60" width="10" height="30" fill="#8B5A2B" stroke="#4E2C11" stroke-width="2"/><circle cx="50" cy="45" r="25" fill="#4CAF50" stroke="#2E7D32" stroke-width="3"/></svg>`,
+    flower: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><circle cx="50" cy="38" r="12" fill="#E91E63" stroke="#880E4F" stroke-width="2"/><circle cx="32" cy="48" r="12" fill="#E91E63" stroke="#880E4F" stroke-width="2"/><circle cx="68" cy="48" r="12" fill="#E91E63" stroke="#880E4F" stroke-width="2"/><circle cx="38" cy="65" r="12" fill="#E91E63" stroke="#880E4F" stroke-width="2"/><circle cx="62" cy="65" r="12" fill="#E91E63" stroke="#880E4F" stroke-width="2"/><circle cx="50" cy="52" r="8" fill="#FDD835" stroke="#F57C00" stroke-width="2"/><line x1="50" y1="65" x2="50" y2="90" stroke="#2E7D32" stroke-width="3"/></svg>`,
+
+    // === ОДЕЖДА ===
+    hat: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="65" rx="38" ry="10" fill="#333" stroke="#000" stroke-width="2"/><path d="M30 65 Q 30 25 50 25 Q 70 25 70 65" fill="#444" stroke="#000" stroke-width="3"/><rect x="30" y="55" width="40" height="8" fill="#E53935" stroke="#8B0000" stroke-width="1.5"/></svg>`,
+    shirt: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M30 25 L20 40 L30 45 L30 80 L70 80 L70 45 L80 40 L70 25 L60 30 Q 50 38 40 30 Z" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3" stroke-linejoin="round"/></svg>`,
+    dress: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M35 25 L30 45 L20 85 L80 85 L70 45 L65 25 L55 30 L50 35 L45 30 Z" fill="#E91E63" stroke="#880E4F" stroke-width="3" stroke-linejoin="round"/></svg>`,
+    shoes: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M15 70 L15 55 Q 20 50 35 52 L55 55 Q 75 55 85 70 Z" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3" stroke-linejoin="round"/><path d="M15 70 L85 70 L85 78 L15 78 Z" fill="#333" stroke="#000" stroke-width="2"/></svg>`,
+
+    // === МЕБЕЛЬ ===
+    chair: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="30" y="20" width="40" height="40" fill="#8B5A2B" stroke="#4E2C11" stroke-width="3"/><rect x="25" y="58" width="50" height="10" fill="#A66D3A" stroke="#4E2C11" stroke-width="3"/><line x1="30" y1="68" x2="30" y2="90" stroke="#4E2C11" stroke-width="4" stroke-linecap="round"/><line x1="70" y1="68" x2="70" y2="90" stroke="#4E2C11" stroke-width="4" stroke-linecap="round"/></svg>`,
+    table: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="15" y="40" width="70" height="10" fill="#A66D3A" stroke="#4E2C11" stroke-width="3"/><line x1="22" y1="50" x2="22" y2="85" stroke="#4E2C11" stroke-width="4" stroke-linecap="round"/><line x1="78" y1="50" x2="78" y2="85" stroke="#4E2C11" stroke-width="4" stroke-linecap="round"/></svg>`,
+    bed: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="12" y="55" width="76" height="25" rx="3" fill="#A66D3A" stroke="#4E2C11" stroke-width="3"/><rect x="18" y="45" width="30" height="15" rx="3" fill="#E0F2FC" stroke="#2E7BAE" stroke-width="2"/><rect x="50" y="50" width="35" height="10" rx="2" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="2"/></svg>`,
+    sofa: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="15" y="50" width="70" height="25" rx="5" fill="#4FA8D8" stroke="#2E7BAE" stroke-width="3"/><rect x="15" y="40" width="70" height="15" rx="5" fill="#7FC4E8" stroke="#2E7BAE" stroke-width="3"/></svg>`,
+    lamp: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M30 40 L70 40 L60 15 L40 15 Z" fill="#FFE082" stroke="#F57C00" stroke-width="3" stroke-linejoin="round"/><line x1="50" y1="40" x2="50" y2="75" stroke="#333" stroke-width="3"/><ellipse cx="50" cy="80" rx="20" ry="4" fill="#333"/></svg>`,
+    mirror: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><ellipse cx="50" cy="45" rx="30" ry="36" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="3"/><ellipse cx="50" cy="45" rx="22" ry="28" fill="#E0F2FC" stroke="#7FC4E8" stroke-width="1.5"/></svg>`,
+    clock: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><circle cx="50" cy="50" r="35" fill="#FFF" stroke="#2E7BAE" stroke-width="4"/><circle cx="50" cy="50" r="3" fill="#333"/><line x1="50" y1="50" x2="50" y2="28" stroke="#333" stroke-width="3" stroke-linecap="round"/><line x1="50" y1="50" x2="68" y2="55" stroke="#333" stroke-width="3" stroke-linecap="round"/></svg>`,
+    ball: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><circle cx="50" cy="50" r="35" fill="#FFF" stroke="#333" stroke-width="3"/><polygon points="50,30 60,40 55,52 45,52 40,40" fill="#333"/></svg>`,
+
+    // === ТЕХНИКА И ПРЕДМЕТЫ ===
+    phone: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><rect x="28" y="12" width="44" height="76" rx="8" fill="#333" stroke="#000" stroke-width="3"/><rect x="33" y="22" width="34" height="52" fill="#B7E0F5" stroke="#2E7BAE" stroke-width="1.5"/><circle cx="50" cy="83" r="3" fill="#666"/></svg>`,
+    key: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><circle cx="30" cy="50" r="16" fill="none" stroke="#FDD835" stroke-width="5"/><circle cx="30" cy="50" r="6" fill="#FDD835"/><rect x="42" y="47" width="48" height="6" fill="#FDD835"/><rect x="80" y="50" width="4" height="10" fill="#FDD835"/><rect x="70" y="50" width="4" height="8" fill="#FDD835"/></svg>`,
+    umbrella: `<svg viewBox="0 0 100 100" style="width:100%;height:100%"><path d="M10 50 Q 50 10 90 50 Z" fill="#E53935" stroke="#8B0000" stroke-width="3" stroke-linejoin="round"/><path d="M10 50 Q 50 55 90 50" fill="none" stroke="#8B0000" stroke-width="3"/><line x1="50" y1="50" x2="50" y2="88" stroke="#333" stroke-width="3"/><path d="M50 88 Q 42 88 42 80" fill="none" stroke="#333" stroke-width="3" stroke-linecap="round"/></svg>`,
+};
+
+function getCtPicture(word) {
+    if (!word) return null;
+    return CT_PICTURES[String(word).toLowerCase().trim()] || null;
+}
+// ============================================================
+// ИГРА: ВЫБЕРИ ПЕРЕВОД (3 уровня как в «Цветах» и «Числах»)
+// ============================================================
 let ctState = null;
 
-function renderChooseTranslationModePicker(words) {
-    if (!words || words.length < 4) {
+const CT_QUESTIONS_PER_LEVEL = 10;
+const CT_PASS_RATIO = 0.7;
+
+const CT_LEVELS = [
+    { num: 1, title: 'Смотри и переводи', icon: '🇷🇺', desc: 'Русское → Английское' },
+    { num: 2, title: 'Смотри и переводи', icon: '🇬🇧', desc: 'Английское → Русское' },
+    { num: 3, title: 'Найди картинку',    icon: '🖼️', desc: 'Слово → Картинка' }
+];
+
+// --- Точка входа ---
+function startCtGame(words) {
+    startCtLevel(1, words);
+}
+
+function startCtLevel(levelNum, words) {
+    let pool = (words || []).filter(w =>
+        w.en && w.ru && w.ru !== '…' &&
+        String(w.en).trim().toLowerCase() !== String(w.ru).trim().toLowerCase()
+    );
+
+    // Уровень 3 — только слова с готовыми картинками
+    if (levelNum === 3) {
+        pool = pool.filter(w => getCtPicture(w.en));
+    }
+
+    if (pool.length < 4) {
+        let msg = 'Нужно минимум 4 слова в источнике.';
+        if (levelNum === 3) {
+            msg = 'Для уровня «Найди картинку» нужно минимум 4 слова с готовыми рисунками. Попробуй другой источник.';
+        }
         contentEl.innerHTML = `
             <div style="text-align:center;">
-                <button class="games-back-btn" id="back-to-kids-games">← К играм</button>
+                <button class="games-back-btn" id="ct-back">← К играм</button>
             </div>
             <div class="games-header">
                 <h2>🎯 Выбери перевод</h2>
-                <p>Нужно минимум 4 слова в источнике</p>
+                <p>Уровень ${levelNum}</p>
             </div>
             <div class="games-placeholder">
                 <span class="big-icon">😔</span>
                 <h2>Недостаточно слов</h2>
-                <p>В этом источнике только ${words ? words.length : 0} слов.
-                   Добавь больше слов в «Мой словарик» или выбери другую категорию.</p>
+                <p>${msg}</p>
             </div>
         `;
-        attachBackButton('back-to-kids-games');
-        return;
-    }
-
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = `
-        <div style="text-align:center;">
-            <button class="games-back-btn" id="back-to-sources">← К выбору источника</button>
-        </div>
-        <div class="games-header">
-            <h2>🎯 Выбери перевод</h2>
-            <p>Как будем играть?</p>
-        </div>
-        <div class="games-grid">
-            <div class="game-card" data-mode="ru-prompt">
-                <div class="game-icon">🇷🇺</div>
-                <div class="game-title">Русское → Английское</div>
-                <div class="game-desc">Видишь русское слово — выбираешь английский перевод</div>
-            </div>
-            <div class="game-card" data-mode="en-prompt">
-                <div class="game-icon">🇬🇧</div>
-                <div class="game-title">Английское → Русское</div>
-                <div class="game-desc">Видишь английское слово — выбираешь русский перевод</div>
-            </div>
-        </div>
-    `;
-    contentEl.innerHTML = '';
-    contentEl.appendChild(wrapper);
-
-    document.getElementById('back-to-sources').addEventListener('click', () => {
-        goBackToSourcePicker('choose-translation');
-    });
-
-    wrapper.querySelectorAll('[data-mode]').forEach(card => {
-        card.addEventListener('click', () => {
-            renderChooseTranslationGame(words, card.dataset.mode);
+        document.getElementById('ct-back').addEventListener('click', () => {
+            ctState = null;
+            if (currentGameAudience === 'adults') renderAdultsGameList();
+            else renderKidsGameList();
         });
-    });
-}
-
-function renderChooseTranslationGame(words, mode) {
-    // Отфильтровываем слова без перевода
-    const cleanWords = words.filter(w =>
-        w.en && w.ru && w.ru !== '…' && w.en !== w.ru
-    );
-
-    if (cleanWords.length < 4) {
-        renderChooseTranslationModePicker(cleanWords);
         return;
     }
 
-    const shuffled = [...cleanWords].sort(() => Math.random() - 0.5);
-    const total = Math.min(shuffled.length, 10);
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, Math.min(CT_QUESTIONS_PER_LEVEL, pool.length));
+    const queue = selected.map(w => ({ ...w, isRepeat: false }));
 
     ctState = {
-        pool: shuffled.slice(0, total),
-        allWords: cleanWords,
-        mode,
-        total,
-        index: 0,
-        score: 0,
-        currentOptions: [],
+        level: levelNum,
+        queue,
+        pool,        // все слова источника (для перезапуска и след. уровней)
+        allWords: pool,
+        totalUnique: queue.length,
+        correctFirstTry: 0,
         answered: false
     };
 
-    contentEl.innerHTML = `
-        <div style="text-align:center;">
-            <button class="games-back-btn" id="back-to-kids-games">← К играм</button>
-        </div>
-        <div class="games-header">
-            <h2>🎯 Выбери перевод</h2>
-            <p>${mode === 'ru-prompt' ? '🇷🇺 → 🇬🇧' : '🇬🇧 → 🇷🇺'}</p>
-        </div>
-        <div id="ct-content"></div>
-
-        <style>
-            .ct-container {
-                max-width: 600px;
-                margin: 0 auto;
-            }
-            .ct-progress {
-                text-align: center;
-                color: #6A6A6A;
-                font-weight: bold;
-                margin-bottom: 15px;
-                font-size: 1rem;
-            }
-            .ct-score {
-                color: #4CAF50;
-            }
-            .ct-prompt-card {
-                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
-                border: 4px solid #FFF;
-                border-radius: 22px;
-                padding: 30px 20px;
-                text-align: center;
-                box-shadow: 0 10px 25px rgba(79,168,216,0.25);
-                margin-bottom: 22px;
-                animation: ctAppear 0.3s ease;
-            }
-            @keyframes ctAppear {
-                from { opacity: 0; transform: translateY(-8px); }
-                to   { opacity: 1; transform: translateY(0); }
-            }
-            .ct-prompt-emoji {
-                font-size: 3.5rem;
-                line-height: 1;
-                margin-bottom: 12px;
-                filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15));
-            }
-            .ct-prompt-word {
-                font-size: 1.8rem;
-                font-weight: bold;
-                color: #2E7BAE;
-                word-break: break-word;
-            }
-            .ct-options {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 12px;
-            }
-            @media (max-width: 500px) {
-                .ct-options { grid-template-columns: 1fr; }
-            }
-            .ct-option {
-                padding: 16px 14px;
-                background: #FFF;
-                border: 3px solid #E0F2FC;
-                border-radius: 15px;
-                font-family: inherit;
-                font-size: 1.05rem;
-                font-weight: bold;
-                color: #2E7BAE;
-                cursor: pointer;
-                text-align: center;
-                transition: all 0.2s;
-                word-break: break-word;
-            }
-            .ct-option:hover:not(:disabled) {
-                border-color: #7FC4E8;
-                background: #E0F2FC;
-                transform: translateY(-3px);
-            }
-            .ct-option:disabled { cursor: default; }
-            .ct-option.correct {
-                background: linear-gradient(135deg, #A8E6A3 0%, #C8F0C4 100%);
-                border-color: #4CAF50;
-                color: #1B5E20;
-                transform: scale(1.04);
-            }
-            .ct-option.wrong {
-                background: linear-gradient(135deg, #FFB3B3 0%, #FFD0D0 100%);
-                border-color: #E53935;
-                color: #B71C1C;
-            }
-            .ct-complete {
-                text-align: center;
-                padding: 30px 20px;
-                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
-                border: 4px solid #FFF;
-                border-radius: 25px;
-                box-shadow: 0 10px 25px rgba(79,168,216,0.25);
-            }
-            .ct-complete .ct-big {
-                font-size: 4rem;
-                line-height: 1;
-                margin-bottom: 10px;
-            }
-            .ct-complete h2 {
-                color: #2E7BAE;
-                margin-bottom: 10px;
-                font-size: 1.5rem;
-            }
-            .ct-complete .ct-score-big {
-                font-size: 1.6rem;
-                color: #E06A1E;
-                font-weight: bold;
-                margin-bottom: 22px;
-            }
-        </style>
-    `;
-
-    attachBackButton('back-to-kids-games');
     renderCtQuestion();
 }
 
 function renderCtQuestion() {
     const s = ctState;
-    const container = document.getElementById('ct-content');
-    if (!container || !s) return;
+    if (!s) return;
+    if (s.queue.length === 0) { finishCtLevel(); return; }
 
-    if (s.index >= s.total) {
-        renderCtComplete();
-        return;
-    }
+    s.answered = false;
+    const item = s.queue[0];
+    const level = s.level;
+    const levelInfo = CT_LEVELS.find(l => l.num === level);
 
-    const current = s.pool[s.index];
-
-    // Собираем 3 неверных варианта из остальных слов
-    const others = s.allWords.filter(w => w.en !== current.en);
-    const shuffledOthers = [...others].sort(() => Math.random() - 0.5);
-    const wrong = shuffledOthers.slice(0, 3);
+    // 3 дистрактора из того же пула
+    const others = s.allWords.filter(w => w.en !== item.en);
+    const wrong = [...others].sort(() => Math.random() - 0.5).slice(0, 3);
 
     const options = [
-        { word: current, isCorrect: true },
+        { word: item, isCorrect: true },
         ...wrong.map(w => ({ word: w, isCorrect: false }))
     ].sort(() => Math.random() - 0.5);
 
     s.currentOptions = options;
-    s.answered = false;
 
-    const promptText = s.mode === 'ru-prompt' ? current.ru : current.en;
+    let promptHtml = '';
+    let optionsHtml = '';
+    let optionsClass = 'ct-options';
 
-    container.innerHTML = `
+    if (level === 1) {
+        // 🇷🇺 → 🇬🇧 (картинка вместо флага)
+        promptHtml = `
+            <div class="ct-prompt-emoji">${item.emoji || '📘'}</div>
+            <div class="ct-prompt-word">${item.ru}</div>
+        `;
+        optionsHtml = options.map((opt, i) =>
+            `<button class="ct-option" data-opt-index="${i}">${opt.word.en}</button>`
+        ).join('');
+    } else if (level === 2) {
+        // 🇬🇧 → 🇷🇺
+        promptHtml = `
+            <div class="ct-prompt-emoji">${item.emoji || '📘'}</div>
+            <div class="ct-prompt-word">${item.en}</div>
+            <button id="ct-speak-prompt" class="sg-play-btn" style="margin-top:14px;">🔊 Прослушать</button>
+        `;
+        optionsHtml = options.map((opt, i) =>
+            `<button class="ct-option" data-opt-index="${i}">${opt.word.ru}</button>`
+        ).join('');
+   } else {
+    // 🇬🇧 → картинка
+    promptHtml = `
+        <div class="ct-prompt-emoji">🖼️</div>
+        <div class="ct-prompt-word" style="letter-spacing:1px;">${item.en}</div>
+        <button id="ct-speak-prompt" class="sg-play-btn">🔊 Прослушать</button>
+    `;
+        optionsHtml = options.map((opt, i) =>
+            `<button class="ct-picture-option" data-opt-index="${i}">${getCtPicture(opt.word.en)}</button>`
+        ).join('');
+        optionsClass = 'ct-picture-options';
+    }
+
+    const mastered = s.totalUnique - s.queue.length;
+
+    contentEl.innerHTML = `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="ct-back">← К играм</button>
+        </div>
+        <div class="games-header">
+            <h2>🎯 Уровень ${level} · ${levelInfo.title}</h2>
+            <p>Освоено: ${mastered} из ${s.totalUnique} · ✓ ${s.correctFirstTry}</p>
+        </div>
         <div class="ct-container">
-            <div class="ct-progress">
-                Вопрос ${s.index + 1} из ${s.total}
-                · <span class="ct-score">✓ ${s.score}</span>
-            </div>
             <div class="ct-prompt-card">
-                <div class="ct-prompt-emoji">${current.emoji || '📘'}</div>
-                <div class="ct-prompt-word">${promptText}</div>
+                ${promptHtml}
             </div>
-            <div class="ct-options" id="ct-options">
-                ${options.map((opt, i) => {
-                    const text = s.mode === 'ru-prompt' ? opt.word.en : opt.word.ru;
-                    return `<button class="ct-option" data-opt-index="${i}">${text}</button>`;
-                }).join('')}
+            <div class="${optionsClass}">
+                ${optionsHtml}
             </div>
         </div>
+   
+<style>
+    .ct-container { max-width: 580px; margin: 0 auto; }
+
+    .ct-prompt-card {
+        background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+        border: 4px solid #FFF;
+        border-radius: 18px;
+        padding: 12px 16px;
+        text-align: center;
+        box-shadow: 0 8px 20px rgba(79,168,216,0.2);
+        margin-bottom: 12px;
+        animation: ctAppear 0.3s ease;
+    }
+    @keyframes ctAppear {
+        from { opacity: 0; transform: translateY(-8px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .ct-prompt-emoji {
+        font-size: 2rem;
+        line-height: 1;
+        margin-bottom: 4px;
+        filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15));
+    }
+    .ct-prompt-word {
+        font-size: 1.35rem;
+        font-weight: bold;
+        color: #2E7BAE;
+        word-break: break-word;
+    }
+
+    /* Компактная кнопка "Прослушать" внутри промпта */
+    .ct-prompt-card .sg-play-btn {
+        padding: 8px 18px !important;
+        font-size: 0.9rem !important;
+        margin-top: 8px !important;
+        border-width: 3px;
+        border-radius: 14px;
+    }
+
+    .ct-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    @media (max-width: 500px) {
+        .ct-options { grid-template-columns: 1fr; gap: 8px; }
+    }
+
+    .ct-option {
+        padding: 12px 12px;
+        background: #FFF;
+        border: 3px solid #E0F2FC;
+        border-radius: 14px;
+        font-family: inherit;
+        font-size: 1rem;
+        font-weight: bold;
+        color: #2E7BAE;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.2s;
+        word-break: break-word;
+    }
+    .ct-option:hover:not(:disabled) {
+        border-color: #7FC4E8;
+        background: #E0F2FC;
+        transform: translateY(-2px);
+    }
+    .ct-option:disabled { cursor: default; }
+    .ct-option.correct {
+        background: linear-gradient(135deg, #A8E6A3 0%, #C8F0C4 100%);
+        border-color: #4CAF50;
+        color: #1B5E20;
+        transform: scale(1.03);
+    }
+    .ct-option.wrong {
+        background: linear-gradient(135deg, #FFB3B3 0%, #FFD0D0 100%);
+        border-color: #E53935;
+        color: #B71C1C;
+    }
+
+    /* === УРОВЕНЬ 3: картинки-варианты — компактная сетка === */
+    .ct-picture-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 140px));
+        gap: 10px;
+        justify-content: center;
+        margin: 0 auto;
+    }
+    .ct-picture-option {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        padding: 6px;
+        background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+        border: 4px solid #E0F2FC;
+        border-radius: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(79,168,216,0.12);
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    .ct-picture-option svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+    .ct-picture-option:hover:not(:disabled) {
+        border-color: #7FC4E8;
+        transform: translateY(-3px) scale(1.02);
+        box-shadow: 0 8px 20px rgba(79,168,216,0.3);
+    }
+    .ct-picture-option:disabled { cursor: default; }
+    .ct-picture-option.correct {
+        border-color: #4CAF50;
+        background: linear-gradient(135deg, #A8E6A3 0%, #C8F0C4 100%);
+        box-shadow: 0 0 0 4px rgba(76,175,80,0.35), 0 8px 20px rgba(76,175,80,0.3);
+        transform: scale(1.03);
+    }
+    .ct-picture-option.wrong {
+        border-color: #E53935;
+        background: linear-gradient(135deg, #FFB3B3 0%, #FFD0D0 100%);
+        opacity: 0.85;
+    }
+
+    /* На очень маленьких экранах — ещё компактнее */
+    @media (max-width: 380px) {
+        .ct-picture-options {
+            grid-template-columns: repeat(2, minmax(0, 110px));
+            gap: 8px;
+        }
+        .ct-prompt-emoji { font-size: 1.6rem; }
+        .ct-prompt-word  { font-size: 1.15rem; }
+    }
+    @media (max-height: 700px) {
+        .ct-prompt-card  { padding: 10px 14px; margin-bottom: 10px; }
+        .ct-prompt-emoji { font-size: 1.6rem; }
+        .ct-prompt-word  { font-size: 1.15rem; }
+        .ct-picture-option { max-height: 110px; }
+    }
+</style>
     `;
-    container.querySelectorAll('.ct-option').forEach(btn => {
+
+    // Кнопка «Прослушать» + АВТОЗАПУСК при появлении вопроса (возвращаем!)
+    const speakBtn = document.getElementById('ct-speak-prompt');
+    if (speakBtn) {
+        const speakFn = () => speakWord(item.en);
+        speakBtn.addEventListener('click', speakFn);
+        setTimeout(speakFn, 300);
+    }
+// Автоозвучка на 1 уровне: озвучиваем русское слово-подсказку
+if (level === 1) {
+    setTimeout(() => speakWord(item.ru), 300);
+}
+
+    // Назад
+    document.getElementById('ct-back').addEventListener('click', () => {
+        if (s.correctFirstTry > 0) {
+            if (!confirm('Выйти из игры? Прогресс раунда не сохранится.')) return;
+        }
+        ctState = null;
+        if (currentGameAudience === 'adults') renderAdultsGameList();
+        else renderKidsGameList();
+    });
+
+    // Обработчик ответа (УБРАЛИ озвучку только при ПРАВИЛЬНОМ ответе)
+    const buttons = document.querySelectorAll('.ct-option, .ct-picture-option');
+    buttons.forEach((btn, i) => {
         btn.addEventListener('click', () => {
-            handleCtAnswer(parseInt(btn.dataset.optIndex, 10));
+            if (s.answered) return;
+            s.answered = true;
+
+            const isCorrect = options[i].isCorrect;
+
+            buttons.forEach((b, j) => {
+                b.disabled = true;
+                if (options[j].isCorrect) b.classList.add('correct');
+                else if (j === i) b.classList.add('wrong');
+            });
+
+            if (isCorrect) {
+                if (!item.isRepeat) s.correctFirstTry++;
+                // Убрали speakWord(item.en) отсюда!
+                s.queue.shift();
+                setTimeout(() => { s.answered = false; renderCtQuestion(); }, 900);
+} else {
+    item.isRepeat = true;
+
+    // На 1 уровне при выборе ответа озвучку не включаем
+    if (s.level !== 1) {
+        speakWord(item.en);
+    }
+
+    setTimeout(() => {
+        s.queue.shift();
+        s.queue.push(item);
+        s.answered = false;
+        renderCtQuestion();
+    }, 1500);
+}
         });
     });
 
-    // === Голосовой ввод ===
+    // Голосовой ввод
     if (voiceAvailable()) {
-        const ctContainer = container.querySelector('.ct-container');
+        const ctContainer = document.querySelector('.ct-container');
         if (ctContainer) {
-            const isRuPrompt = s.mode === 'ru-prompt';
             attachVoiceButton(ctContainer, {
-                lang: isRuPrompt ? 'en-GB' : 'ru-RU',
-                validAnswers: [isRuPrompt ? current.en : current.ru],
+                lang: 'en-GB',
+                validAnswers: [item.en],
                 onMatch: () => {
                     if (s.answered) return;
                     const correctIdx = s.currentOptions.findIndex(o => o.isCorrect);
-                    const b = document.querySelector(`.ct-option[data-opt-index="${correctIdx}"]`);
+                    const b = document.querySelector(`[data-opt-index="${correctIdx}"]`);
                     if (b) b.click();
                 }
             });
         }
     }
 }
-function handleCtAnswer(optIndex) {
+
+function finishCtLevel() {
     const s = ctState;
-    if (!s || s.answered) return;
-    s.answered = true;
+    if (!s) return;
 
-    const selected = s.currentOptions[optIndex];
-    const correctIndex = s.currentOptions.findIndex(o => o.isCorrect);
-    const correctWord = s.currentOptions[correctIndex]?.word;
+    const total = s.totalUnique;
+    const need = Math.ceil(total * CT_PASS_RATIO);
+    const passed = s.correctFirstTry >= need;
+    const percent = Math.round((s.correctFirstTry / total) * 100);
+    const isLast = (s.level === 3);
 
-    const buttons = document.querySelectorAll('.ct-option');
-    buttons.forEach((btn, i) => {
-        btn.disabled = true;
-        if (s.currentOptions[i].isCorrect) {
-            btn.classList.add('correct');
-        } else if (i === optIndex) {
-            btn.classList.add('wrong');
+    let emoji = '😔', message = 'Попробуй ещё раз!';
+    if (passed) {
+        if (percent === 100)   { emoji = '🏆'; message = 'Идеально!'; }
+        else if (percent >= 90){ emoji = '🌟'; message = 'Превосходно!'; }
+        else                   { emoji = '🎉'; message = 'Отличная работа!'; }
+    } else if (percent >= 50)  { emoji = '💪'; message = 'Почти получилось!'; }
+
+    let subtitle = '';
+    let primaryBtn = '';
+    const nextInfo = CT_LEVELS.find(l => l.num === s.level + 1);
+    const nextTitle = nextInfo ? nextInfo.title : '';
+
+    if (!isLast) {
+        if (passed) {
+            subtitle = `Уровень ${s.level} пройден! Дальше — уровень ${s.level + 1}: «${nextTitle}»`;
+            primaryBtn = `<button class="sg-btn-primary" id="ct-next">▶ Уровень ${s.level + 1}: ${nextTitle}</button>`;
+        } else {
+            subtitle = `Чтобы перейти дальше, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="ct-retry">🔄 Попробовать снова</button>`;
         }
-    });
-
-    if (selected.isCorrect) {
-        s.score++;
-        if (selected.word && selected.word.en) speakWord(selected.word.en);
     } else {
-        if (correctWord && correctWord.en) speakWord(correctWord.en);
+        if (passed) {
+            subtitle = 'Ты прошёл все три уровня игры «Выбери перевод»! 🎉';
+            primaryBtn = `<button class="sg-btn-primary" id="ct-restart">🔄 Играть заново</button>`;
+        } else {
+            subtitle = `Чтобы завершить игру, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="ct-retry">🔄 Попробовать снова</button>`;
+        }
     }
 
-    setTimeout(() => {
-        s.index++;
-        renderCtQuestion();
-    }, selected.isCorrect ? 900 : 1500);
-}
-
-function renderCtComplete() {
-    const s = ctState;
-    const container = document.getElementById('ct-content');
-    if (!container || !s) return;
-
-    const percent = Math.round((s.score / s.total) * 100);
-    let emoji = '😔';
-    let message = 'Попробуй ещё раз!';
-    if (percent >= 90)      { emoji = '🏆'; message = 'Превосходно!'; }
-    else if (percent >= 70) { emoji = '🎉'; message = 'Отличная работа!'; }
-    else if (percent >= 50) { emoji = '👍'; message = 'Неплохо!'; }
-    else if (percent >= 30) { emoji = '💪'; message = 'Продолжай тренироваться!'; }
-
-    container.innerHTML = `
-        <div class="ct-container">
-            <div class="ct-complete">
-                <div class="ct-big">${emoji}</div>
+    contentEl.innerHTML = `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="ct-back">← К играм</button>
+        </div>
+        <div class="games-header">
+            <h2>Уровень ${s.level}${isLast ? ' · финальный' : ''}</h2>
+        </div>
+        <div class="sg-container">
+            <div class="sg-complete">
+                <div class="sg-complete-emoji">${emoji}</div>
                 <h2>${message}</h2>
-                <div class="ct-score-big">${s.score} / ${s.total} &nbsp;·&nbsp; ${percent}%</div>
-                <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-                    <button id="ct-restart" style="
-                        padding: 12px 22px;
-                        background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
-                        color: #FFF;
-                        border: 3px solid #FFF;
-                        border-radius: 18px;
-                        font-family: inherit;
-                        font-weight: bold;
-                        font-size: 0.95rem;
-                        cursor: pointer;
-                        box-shadow: 0 5px 15px rgba(79,168,216,0.3);
-                    ">🔄 Ещё раз</button>
-                    <button id="ct-back" style="
-                        padding: 12px 22px;
-                        background: linear-gradient(135deg, #B0B0B0 0%, #C8C8C8 100%);
-                        color: #FFF;
-                        border: 3px solid #FFF;
-                        border-radius: 18px;
-                        font-family: inherit;
-                        font-weight: bold;
-                        font-size: 0.95rem;
-                        cursor: pointer;
-                        box-shadow: 0 5px 15px rgba(150,150,150,0.3);
-                    ">← К выбору источника</button>
+                <div class="sg-complete-score">${s.correctFirstTry} / ${total} · ${percent}%</div>
+                <div class="sg-complete-status ${passed ? 'passed' : 'failed'}">
+                    ${passed ? '✓ Уровень пройден' : `✗ Не хватило ${need - s.correctFirstTry} правильных`}
+                </div>
+
+                ${buildLevelNavHtml(s.level, 3, ['Русское → Английское', 'Английское → Русское', 'Найди картинку'])}
+
+                <p style="color:#6A6A6A; margin-bottom:20px;">${subtitle}</p>
+                <div class="sg-complete-actions">
+                    ${primaryBtn}
+                    <button class="sg-btn-secondary" id="ct-back-games">← К играм</button>
                 </div>
             </div>
         </div>
     `;
 
-    document.getElementById('ct-restart').addEventListener('click', () => {
-        const freshWords = getWordsFromSource(currentGameSource || { type: 'all' });
-        renderChooseTranslationGame(freshWords, s.mode);
-    });
+    const backToGames = () => {
+        ctState = null;
+        if (currentGameAudience === 'adults') renderAdultsGameList();
+        else renderKidsGameList();
+    };
+    document.getElementById('ct-back').addEventListener('click', backToGames);
+    document.getElementById('ct-back-games').addEventListener('click', backToGames);
 
-    document.getElementById('ct-back').addEventListener('click', () => {
-        goBackToSourcePicker('choose-translation');
-    });
+    const retry = document.getElementById('ct-retry');
+    if (retry) retry.addEventListener('click', () => startCtLevel(s.level, s.pool));
+
+    const next = document.getElementById('ct-next');
+    if (next) next.addEventListener('click', () => startCtLevel(s.level + 1, s.pool));
+
+    const restart = document.getElementById('ct-restart');
+    if (restart) restart.addEventListener('click', () => startCtLevel(1, s.pool));
+    // === НАВИГАЦИЯ ПО УРОВНЯМ ===
+    attachLevelNavHandlers(s.level, (lvl) => startCtLevel(lvl, s.pool));
 }
 // ============================================================
 // ИГРА: ФИЛВОРД
@@ -14958,7 +15177,6 @@ function checkWsSelection() {
             c.el.classList.remove('selected');
             c.el.classList.add('found');
         });
-        speakWord(match.en);
         renderWsList();
         // проверяем, все ли слова найдены
         if (s.words.every(w => w.found)) {
@@ -15016,6 +15234,1673 @@ document.addEventListener('click', (e) => {
     }
 });
 // ============================================================
+// ИГРА: ЧАСЫ
+// ============================================================
+let clockState = null;
+
+const CLOCK_TIMES = [
+    { h: 1, m: 0, en: "one o'clock", ru: "час" },
+    { h: 2, m: 0, en: "two o'clock", ru: "два часа" },
+    { h: 3, m: 0, en: "three o'clock", ru: "три часа" },
+    { h: 4, m: 0, en: "four o'clock", ru: "четыре часа" },
+    { h: 5, m: 0, en: "five o'clock", ru: "пять часов" },
+    { h: 6, m: 0, en: "six o'clock", ru: "шесть часов" },
+    { h: 7, m: 0, en: "seven o'clock", ru: "семь часов" },
+    { h: 8, m: 0, en: "eight o'clock", ru: "восемь часов" },
+    { h: 9, m: 0, en: "nine o'clock", ru: "девять часов" },
+    { h: 10, m: 0, en: "ten o'clock", ru: "десять часов" },
+    { h: 11, m: 0, en: "eleven o'clock", ru: "одиннадцать часов" },
+    { h: 12, m: 0, en: "twelve o'clock", ru: "двенадцать часов" },
+    { h: 12, m: 30, en: "half past twelve", ru: "пол-первого" },
+    { h: 1, m: 30, en: "half past one", ru: "пол-второго" },
+    { h: 2, m: 30, en: "half past two", ru: "пол-третьего" },
+    { h: 3, m: 30, en: "half past three", ru: "пол-четвёртого" },
+    { h: 4, m: 30, en: "half past four", ru: "пол-пятого" },
+    { h: 5, m: 30, en: "half past five", ru: "пол-шестого" },
+    { h: 6, m: 30, en: "half past six", ru: "пол-седьмого" },
+    { h: 7, m: 30, en: "half past seven", ru: "пол-восьмого" },
+    { h: 8, m: 30, en: "half past eight", ru: "пол-девятого" },
+    { h: 9, m: 30, en: "half past nine", ru: "пол-десятого" },
+    { h: 10, m: 30, en: "half past ten", ru: "пол-одиннадцатого" },
+    { h: 11, m: 30, en: "half past eleven", ru: "пол-двенадцатого" },
+    { h: 12, m: 15, en: "a quarter past twelve", ru: "четверть первого" },
+    { h: 1, m: 15, en: "a quarter past one", ru: "четверть второго" },
+    { h: 2, m: 15, en: "a quarter past two", ru: "четверть третьего" },
+    { h: 3, m: 15, en: "a quarter past three", ru: "четверть четвёртого" },
+    { h: 4, m: 15, en: "a quarter past four", ru: "четверть пятого" },
+    { h: 5, m: 15, en: "a quarter past five", ru: "четверть шестого" },
+    { h: 6, m: 15, en: "a quarter past six", ru: "четверть седьмого" },
+    { h: 7, m: 15, en: "a quarter past seven", ru: "четверть восьмого" },
+    { h: 8, m: 15, en: "a quarter past eight", ru: "четверть девятого" },
+    { h: 9, m: 15, en: "a quarter past nine", ru: "четверть десятого" },
+    { h: 10, m: 15, en: "a quarter past ten", ru: "четверть одиннадцатого" },
+    { h: 11, m: 15, en: "a quarter past eleven", ru: "четверть двенадцатого" },
+    { h: 12, m: 45, en: "a quarter to one", ru: "без четверти час" },
+    { h: 1, m: 45, en: "a quarter to two", ru: "без четверти два" },
+    { h: 2, m: 45, en: "a quarter to three", ru: "без четверти три" },
+    { h: 3, m: 45, en: "a quarter to four", ru: "без четверти четыре" },
+    { h: 4, m: 45, en: "a quarter to five", ru: "без четверти пять" },
+    { h: 5, m: 45, en: "a quarter to six", ru: "без четверти шесть" },
+    { h: 6, m: 45, en: "a quarter to seven", ru: "без четверти семь" },
+    { h: 7, m: 45, en: "a quarter to eight", ru: "без четверти восемь" },
+    { h: 8, m: 45, en: "a quarter to nine", ru: "без четверти девять" },
+    { h: 9, m: 45, en: "a quarter to ten", ru: "без четверти десять" },
+    { h: 10, m: 45, en: "a quarter to eleven", ru: "без четверти одиннадцать" },
+    { h: 11, m: 45, en: "a quarter to twelve", ru: "без четверти двенадцать" },
+    { h: 12, m: 5, en: "five past twelve", ru: "пять минут первого" },
+    { h: 1, m: 5, en: "five past one", ru: "пять минут второго" },
+    { h: 2, m: 5, en: "five past two", ru: "пять минут третьего" },
+    { h: 3, m: 5, en: "five past three", ru: "пять минут четвёртого" },
+    { h: 4, m: 5, en: "five past four", ru: "пять минут пятого" },
+    { h: 5, m: 5, en: "five past five", ru: "пять минут шестого" },
+    { h: 6, m: 5, en: "five past six", ru: "пять минут седьмого" },
+    { h: 7, m: 5, en: "five past seven", ru: "пять минут восьмого" },
+    { h: 8, m: 5, en: "five past eight", ru: "пять минут девятого" },
+    { h: 9, m: 5, en: "five past nine", ru: "пять минут десятого" },
+    { h: 10, m: 5, en: "five past ten", ru: "пять минут одиннадцатого" },
+    { h: 11, m: 5, en: "five past eleven", ru: "пять минут двенадцатого" },
+    { h: 12, m: 55, en: "five to one", ru: "без пяти час" },
+    { h: 1, m: 55, en: "five to two", ru: "без пяти два" },
+    { h: 2, m: 55, en: "five to three", ru: "без пяти три" },
+    { h: 3, m: 55, en: "five to four", ru: "без пяти четыре" },
+    { h: 4, m: 55, en: "five to five", ru: "без пяти пять" },
+    { h: 5, m: 55, en: "five to six", ru: "без пяти шесть" },
+    { h: 6, m: 55, en: "five to seven", ru: "без пяти семь" },
+    { h: 7, m: 55, en: "five to eight", ru: "без пяти восемь" },
+    { h: 8, m: 55, en: "five to nine", ru: "без пяти девять" },
+    { h: 9, m: 55, en: "five to ten", ru: "без пяти десять" },
+    { h: 10, m: 55, en: "five to eleven", ru: "без пяти одиннадцать" },
+    { h: 11, m: 55, en: "five to twelve", ru: "без пяти двенадцать" },
+    { h: 12, m: 20, en: "twenty past twelve", ru: "двадцать минут первого" },
+    { h: 1, m: 20, en: "twenty past one", ru: "двадцать минут второго" },
+    { h: 2, m: 20, en: "twenty past two", ru: "двадцать минут третьего" },
+    { h: 3, m: 20, en: "twenty past three", ru: "двадцать минут четвёртого" },
+    { h: 4, m: 20, en: "twenty past four", ru: "двадцать минут пятого" },
+    { h: 5, m: 20, en: "twenty past five", ru: "двадцать минут шестого" },
+    { h: 6, m: 20, en: "twenty past six", ru: "двадцать минут седьмого" },
+    { h: 7, m: 20, en: "twenty past seven", ru: "двадцать минут восьмого" },
+    { h: 8, m: 20, en: "twenty past eight", ru: "двадцать минут девятого" },
+    { h: 9, m: 20, en: "twenty past nine", ru: "двадцать минут десятого" },
+    { h: 10, m: 20, en: "twenty past ten", ru: "двадцать минут одиннадцатого" },
+    { h: 11, m: 20, en: "twenty past eleven", ru: "двадцать минут двенадцатого" },
+    { h: 12, m: 40, en: "twenty to one", ru: "без двадцати час" },
+    { h: 1, m: 40, en: "twenty to two", ru: "без двадцати два" },
+    { h: 2, m: 40, en: "twenty to three", ru: "без двадцати три" },
+    { h: 3, m: 40, en: "twenty to four", ru: "без двадцати четыре" },
+    { h: 4, m: 40, en: "twenty to five", ru: "без двадцати пять" },
+    { h: 5, m: 40, en: "twenty to six", ru: "без двадцати шесть" },
+    { h: 6, m: 40, en: "twenty to seven", ru: "без двадцати семь" },
+    { h: 7, m: 40, en: "twenty to eight", ru: "без двадцати восемь" },
+    { h: 8, m: 40, en: "twenty to nine", ru: "без двадцати девять" },
+    { h: 9, m: 40, en: "twenty to ten", ru: "без двадцати десять" },
+    { h: 10, m: 40, en: "twenty to eleven", ru: "без двадцати одиннадцать" },
+    { h: 11, m: 40, en: "twenty to twelve", ru: "без двадцати двенадцать" },
+    { h: 12, m: 0, en: "afternoon", ru: "полдень" },
+    { h: 0, m: 0, en: "midnight", ru: "полночь" },
+];
+// ============================================================
+// ЧАСЫ: 10 типов выражений (каждый уровень — все 10, без повторов)
+// ============================================================
+const HOUR_EN = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+const HOUR_RU_NOM_FULL = ['', 'час', 'два часа', 'три часа', 'четыре часа', 'пять часов', 'шесть часов', 'семь часов', 'восемь часов', 'девять часов', 'десять часов', 'одиннадцать часов', 'двенадцать часов'];
+const HOUR_RU_NOM_SHORT = ['', 'час', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять', 'десять', 'одиннадцать', 'двенадцать'];
+const HOUR_RU_GEN = ['', 'первого', 'второго', 'третьего', 'четвёртого', 'пятого', 'шестого', 'седьмого', 'восьмого', 'девятого', 'десятого', 'одиннадцатого', 'двенадцатого'];
+
+function nextHour(h) { return h >= 12 ? 1 : h + 1; }
+
+function clockDigitalDisplay(h, m) {
+    if (h === 0 && m === 0) return '00:00';
+    const h12 = get12Hour(h);
+    return String(h12).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+function buildClockRound() {
+    const pastHours = sgShuffle([1,2,3,4,5,6,7,8,9,10,11,12]);
+    const toTargets = sgShuffle([1,2,3,4,5,6,7,8,9,10,11,12]);
+    const oclockHours = sgShuffle([1,2,3,4,5,6,7,8,9,10,11]);
+
+    const cards = [];
+
+    // 1. o'clock
+    const h1 = oclockHours[0];
+    cards.push({ h: h1, m: 0, en: `${HOUR_EN[h1]} o'clock`, ru: HOUR_RU_NOM_FULL[h1], type: 'oclock' });
+
+    // 2. five past
+    const h2 = pastHours[0];
+    cards.push({ h: h2, m: 5, en: `five past ${HOUR_EN[h2]}`, ru: `пять минут ${HOUR_RU_GEN[nextHour(h2)]}`, type: 'five-past' });
+
+    // 3. five to
+    const t3 = toTargets[0];
+    const h3 = t3 === 1 ? 12 : t3 - 1;
+    cards.push({ h: h3, m: 55, en: `five to ${HOUR_EN[t3]}`, ru: `без пяти ${HOUR_RU_NOM_SHORT[t3]}`, type: 'five-to' });
+
+    // 4. twenty-five past
+    const h4 = pastHours[1];
+    cards.push({ h: h4, m: 25, en: `twenty-five past ${HOUR_EN[h4]}`, ru: `двадцать пять минут ${HOUR_RU_GEN[nextHour(h4)]}`, type: 'twenty-five-past' });
+
+    // 5. twenty to
+    const t5 = toTargets[1];
+    const h5 = t5 === 1 ? 12 : t5 - 1;
+    cards.push({ h: h5, m: 40, en: `twenty to ${HOUR_EN[t5]}`, ru: `без двадцати ${HOUR_RU_NOM_SHORT[t5]}`, type: 'twenty-to' });
+
+    // 6. quarter past
+    const h6 = pastHours[2];
+    cards.push({ h: h6, m: 15, en: `a quarter past ${HOUR_EN[h6]}`, ru: `четверть ${HOUR_RU_GEN[nextHour(h6)]}`, type: 'quarter-past' });
+
+    // 7. quarter to
+    const t7 = toTargets[2];
+    const h7 = t7 === 1 ? 12 : t7 - 1;
+    cards.push({ h: h7, m: 45, en: `a quarter to ${HOUR_EN[t7]}`, ru: `без четверти ${HOUR_RU_NOM_SHORT[t7]}`, type: 'quarter-to' });
+
+    // 8. half past
+    const h8 = pastHours[3];
+    cards.push({ h: h8, m: 30, en: `half past ${HOUR_EN[h8]}`, ru: `пол-${HOUR_RU_GEN[nextHour(h8)]}`, type: 'half-past' });
+
+    // 9. afternoon (полдень)
+    cards.push({ h: 12, m: 0, en: 'afternoon', ru: 'полдень', type: 'afternoon' });
+
+    // 10. midnight
+    cards.push({ h: 0, m: 0, en: 'midnight', ru: 'полночь', type: 'midnight' });
+
+    return sgShuffle(cards);
+}
+function get12Hour(h) {
+    if (h === 0) return 12;
+    if (h > 12) return h - 12;
+    return h;
+}
+
+function normalizeTimeString(str) {
+    if (!str) return '';
+    let s = str.toLowerCase().trim();
+    const numberMap = {
+        one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12',
+        twenty: '20', thirty: '30', forty: '40', fifty: '50', fifteen: '15',
+        'a quarter': 'quarter', 'half past': 'half', oclock: 'oclock'
+    };
+    for (const [word, digit] of Object.entries(numberMap)) {
+        s = s.replace(new RegExp('\\b' + word + '\\b', 'g'), digit);
+    }
+    s = s.replace(/[.,!?;'"«»…]/g, '');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+}
+
+function getClockAcceptableAnswers(time) {
+    // Полночь = 00:00, полдень = 12:00, остальное — 12-часовой формат
+    const displayHour = time.h === 0 ? 0 : get12Hour(time.h);
+    const m = time.m;
+    const mm = String(m).padStart(2, '0');
+    return [
+        time.en,
+        `${displayHour}:${mm}`,
+        `${displayHour}.${mm}`,
+        `${displayHour} ${mm}`
+    ];
+}
+
+function isClockAnswerCorrect(input, time) {
+    if (!input) return false;
+    const normInput = normalizeTimeString(input);
+    return getClockAcceptableAnswers(time).map(normalizeTimeString).includes(normInput);
+}
+
+function clockSvg(h, m, { roman = false, size = 200 } = {}) {
+    const cx = 100, cy = 100, r = 90;
+    const hourAngle = (h % 12) * 30 + m * 0.5;
+    const minuteAngle = m * 6;
+
+    let ticks = '';
+    let numbers = '';
+    for (let i = 0; i < 12; i++) {
+        const angle = i * 30;
+        const rad = (angle - 90) * Math.PI / 180;
+        const x1 = cx + Math.cos(rad) * (r - 10);
+        const y1 = cy + Math.sin(rad) * (r - 10);
+        const x2 = cx + Math.cos(rad) * r;
+        const y2 = cy + Math.sin(rad) * r;
+        ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#333" stroke-width="2"/>`;
+        const numRad = (angle - 90) * Math.PI / 180;
+        const nx = cx + Math.cos(numRad) * (r - 25);
+        const ny = cy + Math.sin(numRad) * (r - 25) + 5;
+        let label = i === 0 ? 12 : i;
+        if (roman) {
+            const romanNums = ['XII','I','II','III','IV','V','VI','VII','VIII','IX','X','XI'];
+            label = romanNums[i];
+        }
+        numbers += `<text x="${nx}" y="${ny}" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">${label}</text>`;
+    }
+
+    const hourRad = (hourAngle - 90) * Math.PI / 180;
+    const hx = cx + Math.cos(hourRad) * 50;
+    const hy = cy + Math.sin(hourRad) * 50;
+    const minRad = (minuteAngle - 90) * Math.PI / 180;
+    const mx = cx + Math.cos(minRad) * 70;
+    const my = cy + Math.sin(minRad) * 70;
+
+    return `
+        <svg viewBox="0 0 200 200" class="analog-clock-svg" style="width:${size}px; height:${size}px;">
+            <circle cx="${cx}" cy="${cy}" r="${r}" fill="#FFF" stroke="#2E7BAE" stroke-width="4"/>
+            ${ticks}
+            ${numbers}
+            <line x1="${cx}" y1="${cy}" x2="${hx}" y2="${hy}" stroke="#2E7BAE" stroke-width="6" stroke-linecap="round"/>
+            <line x1="${cx}" y1="${cy}" x2="${mx}" y2="${my}" stroke="#E06A1E" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="${cx}" cy="${cy}" r="5" fill="#333"/>
+        </svg>
+    `;
+}
+
+function attachClockBonusButton() {
+    const btn = document.getElementById('clock-bonus-btn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            if (clockState && clockState.level !== 'bonus') {
+                // Если уже есть правильные ответы, спрашиваем подтверждение
+                if (clockState.correctFirstTry > 0) {
+                    if (!confirm('Перейти на бонусный уровень? Прогресс текущего уровня не сохранится.')) return;
+                }
+                startClockLevel('bonus');
+            }
+        });
+    }
+}
+
+function startClockGame() {
+    startClockLevel(1);
+}
+
+function startClockLevel(levelNum) {
+    if (clockState && clockState._cleanup) {
+        clockState._cleanup();
+    }
+    const cards = buildClockRound();
+    clockState = {
+        level: levelNum,
+        queue: cards.map(t => ({ ...t, isRepeat: false })),
+        totalUnique: 10,
+        correctFirstTry: 0,
+        answered: false,
+        currentH: 12,
+        currentM: 0
+    };
+    if (levelNum === 1)           renderClockLevel1();
+    else if (levelNum === 2)      renderClockLevel2();
+    else if (levelNum === 3)      renderClockLevel3(false);
+    else if (levelNum === 4)      renderClockLevel4();
+    else if (levelNum === 'bonus') renderClockLevel3(true);
+}
+// ============================================================
+// ЧАСЫ: сравнение с опечатками + подсветка букв
+// ============================================================
+const CLOCK_HINT_WORDS = [
+    { word: "o'clock", display: "o'clock" },
+    { word: 'past', display: 'past' },
+    { word: 'to', display: 'to' },
+    { word: 'quarter', display: 'quarter' },
+    { word: 'half', display: 'half' },
+    { word: 'one', display: 'one' },
+    { word: 'two', display: 'two' },
+    { word: 'three', display: 'three' },
+    { word: 'four', display: 'four' },
+    { word: 'five', display: 'five' },
+    { word: 'six', display: 'six' },
+    { word: 'seven', display: 'seven' },
+    { word: 'eight', display: 'eight' },
+    { word: 'nine', display: 'nine' },
+    { word: 'ten', display: 'ten' },
+    { word: 'eleven', display: 'eleven' },
+    { word: 'twelve', display: 'twelve' },
+    { word: 'twenty', display: 'twenty' },
+    { word: 'twenty-five', display: 'twenty-five' },
+    { word: 'a.m.', display: 'a.m.' },
+    { word: 'p.m.', display: 'p.m.' },
+    { word: 'afternoon', display: 'afternoon (полдень)' },
+    { word: 'midnight', display: 'midnight (полночь)' }
+];
+
+function clockLevenshtein(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    const dp = Array.from({length: m + 1}, () => new Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1];
+            else dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+    }
+    return dp[m][n];
+}
+
+function clockComputeLcsDiff(typed, target) {
+    const m = typed.length, n = target.length;
+    const dp = Array.from({length: m + 1}, () => new Array(n + 1).fill(0));
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            if (typed[i - 1] === target[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+            else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+    }
+    const matchedTyped = new Set();
+    const matchedTarget = new Set();
+    let i = m, j = n;
+    while (i > 0 && j > 0) {
+        if (typed[i - 1] === target[j - 1]) {
+            matchedTyped.add(i - 1);
+            matchedTarget.add(j - 1);
+            i--; j--;
+        } else if (dp[i - 1][j] > dp[i][j - 1]) {
+            i--;
+        } else {
+            j--;
+        }
+    }
+    return { matchedTyped, matchedTarget };
+}
+
+function clockEscapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function clockRenderDiff(typed, target) {
+    const { matchedTyped, matchedTarget } = clockComputeLcsDiff(
+        typed.toLowerCase(), target.toLowerCase()
+    );
+    const typedHtml = typed.split('').map((ch, i) =>
+        matchedTyped.has(i)
+            ? clockEscapeHtml(ch)
+            : `<span class="clock-diff-wrong">${clockEscapeHtml(ch)}</span>`
+    ).join('');
+    const targetHtml = target.split('').map((ch, i) =>
+        matchedTarget.has(i)
+            ? clockEscapeHtml(ch)
+            : `<span class="clock-diff-added">${clockEscapeHtml(ch)}</span>`
+    ).join('');
+    return { typedHtml, targetHtml };
+}
+function checkClockAnswerDetailed(input, time) {
+    if (!input || !input.trim()) return { status: 'empty' };
+
+    // Очищаем от знаков препинания и игнорируем артикли (a, an, the)
+    const clean = (s) => s.toLowerCase().replace(/[.,!?;'"«»…]/g, '').replace(/\b(a|an|the)\b/g, '').replace(/\s+/g, ' ').trim();
+    
+    const normInput = clean(input);
+    const targetNorm = clean(time.en);
+
+    // 1. Точное совпадение
+    const accepted = getClockAcceptableAnswers(time).map(clean);
+    if (accepted.includes(normInput) || normInput === targetNorm) {
+        return { status: 'exact' };
+    }
+
+    // 2. Проверка на перестановку слов (порядок не важен, артикли игнорируются)
+    const sortW = (s) => s.split(' ').filter(Boolean).sort().join(' ');
+    if (sortW(normInput) === sortW(targetNorm)) {
+        return { status: 'close', typed: input, corrected: time.en };
+    }
+
+    // 3. Близкое совпадение (опечатка)
+    // Разрешаем только если:
+    //   а) расстояние Левенштейна в пределах maxDist;
+    //   б) длина ответа отличается от эталона не больше чем на 1 символ.
+    // Это отсекает ложные совпадения, когда игрок написал другие слова
+    // (например, "twenty to two" вместо "twenty to one") — там
+    // расстояние маленькое, но заменено слишком много букв.
+       const dist = clockLevenshtein(normInput, targetNorm);
+       const maxDist = Math.max(1, Math.floor(targetNorm.length / 6));   // ← ✅
+       const lengthDiff = Math.abs(normInput.length - targetNorm.length);
+       if (dist <= maxDist && lengthDiff <= 1) {
+       return { status: 'close', typed: input, corrected: time.en };
+ }
+
+    return { status: 'wrong' };
+}
+
+function getRelevantHintWords(en) {
+    const answerWords = en.toLowerCase().replace(/[.,!?;]/g, '').split(/\s+/);
+    const structural = ['half', 'quarter', 'past', 'to', "o'clock"];
+    const hours = ['one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
+    const minutes = ['twenty', 'twenty-five'];
+    const dayparts = ['a.m.', 'p.m.', 'afternoon', 'midnight'];
+
+    const result = [];
+    const add = (w) => { if (answerWords.includes(w) && !result.includes(w)) result.push(w); };
+    structural.forEach(add);
+    hours.forEach(add);
+    minutes.forEach(add);
+    dayparts.forEach(add);
+    return result;
+}
+
+function setupClockBatchCommon(s, container, inputSel, cardSel, reRenderFn) {
+    let activeCardIndex = 0;
+    let advancing = false;
+    const inputs = container.querySelectorAll(inputSel);
+    const cards = container.querySelectorAll(cardSel);
+    const hintBtn = document.getElementById('clock-hint-btn');
+
+    function updateActiveCard(idx) {
+        if (activeCardIndex !== idx) {
+            activeCardIndex = idx;
+            cards.forEach((c, i) => c.classList.toggle('active-card', i === idx));
+        }
+    }
+
+    // Обновление состояния кнопки подсказки (вкл/выкл)
+    function updateHintButtonState() {
+        if (!hintBtn) return;
+        const allChecked = s.currentBatch.every(t => t.checked);
+        if (allChecked) {
+            hintBtn.disabled = true;
+            hintBtn.style.opacity = '0.5';
+            hintBtn.style.cursor = 'default';
+            hintBtn.textContent = 'Все заполнено';
+        } else {
+            hintBtn.disabled = false;
+            hintBtn.style.opacity = '1';
+            hintBtn.style.cursor = 'pointer';
+            hintBtn.textContent = '💡 Подсказка';
+        }
+    }
+
+    inputs.forEach((inp, i) => {
+        inp.addEventListener('focus', () => updateActiveCard(i));
+        
+        // АВТОПРОВЕРКА ПРИ ВВОДЕ С КЛАВИАТУРЫ
+        inp.addEventListener('input', () => {
+            if (!inp.value.trim() || inp.disabled || s.currentBatch[i].checked) return;
+            const result = checkClockAnswerDetailed(inp.value, s.currentBatch[i]);
+            
+            // Только 'exact'. 'close' (опечатка) НЕ должно авто-срабатывать —
+            // иначе при наборе длинных фраз ("twenty to one") система примет
+            // промежуточное значение ("twenty to o", "twenty to on")
+            // за «опечатку», закроет карточку и перекинет на следующую,
+            // не дав допечатать слово.
+            if (result.status === 'exact') {
+                checkSingleClockCard(i);
+            }
+        });
+
+        inp.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const enabledInputs = Array.from(inputs).filter(input => !input.disabled && !s.currentBatch[Array.from(inputs).indexOf(input)].checked);
+                const allFilled = enabledInputs.every(input => input.value.trim().length > 0);
+                
+                if (allFilled && enabledInputs.length > 0) {
+                    checkAllClockCards();
+                } else if (inp.value.trim().length > 0) {
+                    checkSingleClockCard(i);
+                }
+            }
+        });
+    });
+
+    updateHintButtonState();
+
+    // === ПОДСКАЗКА: ПОШАГОВАЯ ВСТАВКА СЛОВ ===
+    if (hintBtn) {
+        hintBtn.addEventListener('click', () => {
+            // 1. Ищем первый неотвеченный квадрат
+            let targetIdx = -1;
+            for (let i = 0; i < s.currentBatch.length; i++) {
+                if (!s.currentBatch[i].checked) { targetIdx = i; break; }
+            }
+            if (targetIdx === -1) return; // Все уже проверены
+
+            const t = s.currentBatch[targetIdx];
+            const input = container.querySelector(`${inputSel}[data-index="${targetIdx}"]`);
+            if (!input || input.disabled) return;
+
+            // 2. Считаем, сколько слов уже вставили для этого квадрата
+            if (!s.hintState) s.hintState = {};
+            if (!s.hintState[targetIdx]) s.hintState[targetIdx] = 0;
+
+            const targetWords = t.en.split(/\s+/);
+            let wordCount = s.hintState[targetIdx];
+
+            // Защита: если счетчик переполнился, начинаем заново
+            if (wordCount >= targetWords.length) wordCount = 0;
+
+            // 3. Вставляем нужное количество слов
+            const wordsToSet = targetWords.slice(0, wordCount + 1).join(' ');
+            input.value = wordsToSet;
+
+            // 4. Проверяем, вставили ли мы последнее слово
+            if (wordCount + 1 >= targetWords.length) {
+                s.hintState[targetIdx] = 0; // сбрасываем
+                checkSingleClockCard(targetIdx); // запускаем автопроверку и переход
+            } else {
+                s.hintState[targetIdx]++;
+                input.focus();
+                updateActiveCard(targetIdx);
+            }
+        });
+    }
+
+    // === Озвучка ===
+    container.querySelectorAll('.clock-voice-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt(btn.dataset.index);
+            const t = s.currentBatch[idx];
+            const input = container.querySelector(`${inputSel}[data-index="${idx}"]`);
+            if (input && !input.disabled) attachVoiceToInput(input, t);
+        });
+    });
+
+    // === Проверка одной карточки ===
+    container.querySelectorAll('.clock-check-single-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            checkSingleClockCard(parseInt(btn.dataset.index));
+        });
+    });
+
+    // === Проверить всё ===
+    const checkAllBtn = document.getElementById('clock-check');
+    if (checkAllBtn) checkAllBtn.addEventListener('click', checkAllClockCards);
+
+    function checkSingleClockCard(idx) {
+        const t = s.currentBatch[idx];
+        if (!t || t.checked) return;
+        const input = container.querySelector(`${inputSel}[data-index="${idx}"]`);
+        
+        let result = { status: 'wrong' };
+        if (input) {
+            result = checkClockAnswerDetailed(input.value, t);
+        }
+
+        if (result.status === 'empty') {
+            if (input) {
+                input.classList.add('wrong');
+                setTimeout(() => input.classList.remove('wrong'), 800);
+            }
+            return;
+        }
+
+        if (result.status === 'exact' || result.status === 'close') {
+            t.checked = true;
+            t.isGreen = true;
+            if (t.firstTry) s.correctFirstTry++;
+            
+            if (input) {
+                input.classList.add('correct');
+                input.disabled = true;
+                if (result.status === 'close') {
+                    applyClockCorrection(idx, input, result.typed, result.corrected, false);
+                }
+            }
+
+            const cb = container.querySelector(`.clock-check-single-btn[data-index="${idx}"]`);
+            if (cb) cb.disabled = true;
+            
+            // АВТОПЕРЕХОД НА СЛЕДУЮЩИЙ КВАДРАТ
+            let nextIdx = -1;
+            for (let j = 0; j < s.currentBatch.length; j++) {
+                if (!s.currentBatch[j].checked) { nextIdx = j; break; }
+            }
+            if (nextIdx !== -1) {
+                const nextInput = container.querySelector(`${inputSel}[data-index="${nextIdx}"]`);
+                if (nextInput) {
+                    nextInput.focus();
+                    updateActiveCard(nextIdx);
+                }
+            }
+
+            afterAnyCheck();
+        } else {
+            t.attempts = (t.attempts || 0) + 1;
+            t.firstTry = false;
+            if (input) {
+                input.classList.add('wrong');
+                setTimeout(() => input.classList.remove('wrong'), 1200);
+            }
+
+            // 3 ОШИБКИ - показываем ответ, красим в красный
+            if (t.attempts >= 3) {
+                t.checked = true;
+                t.isGreen = false;
+                if (input) {
+                    applyClockCorrection(idx, input, input.value, t.en, true);
+                }
+                
+                const cb = container.querySelector(`.clock-check-single-btn[data-index="${idx}"]`);
+                if (cb) cb.disabled = true;
+                
+                // АВТОПЕРЕХОД НА СЛЕДУЮЩИЙ КВАДРАТ
+                let nextIdx = -1;
+                for (let j = 0; j < s.currentBatch.length; j++) {
+                    if (!s.currentBatch[j].checked) { nextIdx = j; break; }
+                }
+                if (nextIdx !== -1) {
+                    const nextInput = container.querySelector(`${inputSel}[data-index="${nextIdx}"]`);
+                    if (nextInput) {
+                        nextInput.focus();
+                        updateActiveCard(nextIdx);
+                    }
+                }
+
+                afterAnyCheck();
+            }
+        }
+    }
+
+    function checkAllClockCards() {
+        s.currentBatch.forEach((t, i) => {
+            if (!t.checked) checkSingleClockCard(i);
+        });
+    }
+
+    function afterAnyCheck() {
+        updateHintButtonState();
+
+        if (advancing) return;
+        if (s.currentBatch.every(t => t.checked)) {
+            const greens = s.currentBatch.filter(t => t.isGreen).length;
+            
+        if (greens >= 4) {
+            advancing = true;
+            setTimeout(() => {
+                advancing = false;
+                s.queue.splice(0, 5);
+                if (s.queue.length === 0) finishClockLevel();
+                else reRenderFn();
+            }, 1200);
+        } else {
+            showVoiceToast('Нужно хотя бы 4 зелёных квадрата из 5. Попробуй ещё раз!', true);
+            setTimeout(() => {
+                // ⚠️ ВАЖНО: перед сбросом отнимаем уже засчитанные зелёные,
+                // иначе при повторном прохождении они засчитаются ещё раз.
+                const greenCount = s.currentBatch.filter(t => t.isGreen).length;
+                s.correctFirstTry -= greenCount;
+
+                s.currentBatch.forEach(t => {
+                    t.checked = false;
+                    t.isGreen = false;
+                    t.attempts = 0;
+                    t.firstTry = true;
+                });
+                reRenderFn();
+            }, 1800);
+        }
+        }
+    }
+
+    function applyClockCorrection(idx, input, typed, corrected, isFailed) {
+        const diff = clockRenderDiff(typed, corrected);
+
+        const diffDiv = document.createElement('div');
+        diffDiv.className = 'clock-input-diff' + (isFailed ? ' failed' : '');
+        diffDiv.dataset.index = idx;
+        diffDiv.innerHTML = diff.targetHtml;
+
+        const annotation = document.createElement('div');
+        annotation.className = 'clock-diff-annotation';
+        if (isFailed) {
+            annotation.innerHTML = `<span style="color:#E53935;font-weight:bold;">3 ошибки. Правильно:</span>`;
+        } else {
+            annotation.innerHTML = `<span>Ты написал:</span> <span class="clock-diff-typed">${diff.typedHtml}</span>`;
+        }
+
+        input.parentNode.insertBefore(diffDiv, input);
+        input.parentNode.insertBefore(annotation, input.nextSibling);
+        input.remove();
+
+        const voiceBtn = container.querySelector(`.clock-voice-btn[data-index="${idx}"]`);
+        if (voiceBtn) voiceBtn.disabled = true;
+
+        if (isFailed) {
+            const card = container.querySelector(`${cardSel}[data-index="${idx}"]`);
+            if (card) {
+                card.style.borderColor = '#E53935';
+                card.style.backgroundColor = '#FFEBEE';
+            }
+        }
+    }
+}
+function renderClockLevel3(isBonus) {
+    const s = clockState;
+    const batch = s.queue.slice(0, 5);
+    if (batch.length === 0) {
+        finishClockLevel();
+        return;
+    }
+    s.currentBatch = batch.map(t => ({ ...t, input: '', checked: false, firstTry: true, attempts: 0 }));
+    s.hintState = {};
+
+    const title = isBonus ? 'Бонусный уровень · Римские цифры' : 'Уровень 3 · Механические часы';
+    const levelDesc = isBonus
+        ? 'Напиши, сколько времени по-английски, используя специальные слова (римские цифры)'
+        : 'Напиши, сколько времени по-английски, используя специальные слова';
+
+    contentEl.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+            <div class="games-header" style="text-align: left; margin-bottom: 0; padding-left: 5px;">
+                <h2 style="font-size: 2rem; margin-bottom: 5px; color: #2E7BAE;">🕐 ${title}</h2>
+                <p style="font-size: 1.15rem; color: #666; font-weight: normal;">${levelDesc}</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="games-back-btn" id="clock-back" style="margin-bottom: 0; padding: 10px 15px;">← К играм</button>
+                <button id="clock-bonus-btn" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); border:3px solid #FFF; border-radius:50%; width:50px; height:50px; font-size:1.5rem; cursor:pointer; box-shadow:0 4px 12px rgba(255,165,0,0.4);">⭐</button>
+            </div>
+        </div>
+
+        <div class="clock-game-layout">
+            <div class="clock-left">
+                <div class="clock-grid" id="clock-grid">
+                    ${s.currentBatch.map((t, i) => `
+                        <div class="clock-card ${i === 0 ? 'active-card' : ''}" data-index="${i}">
+                            <div class="analog-wrap">${clockSvg(t.h, t.m, { roman: isBonus, size: 130 })}</div>
+                            <div style="text-align:center; font-size:0.75rem; color:#888; margin-top:2px; min-height:14px;">
+                                ${(t.h === 0 && t.m === 0) ? '🌙 полночь' : (t.h === 12 && t.m === 0) ? '☀️ полдень' : ''}
+                            </div>
+                            <input type="text" class="clock-input" data-index="${i}" autocomplete="off" spellcheck="false" autocapitalize="off">
+                            <div class="clock-card-actions">
+                                <button class="clock-voice-btn" data-index="${i}" title="Голосовой ввод">🎤</button>
+                                <button class="clock-check-single-btn" data-index="${i}">✓ Проверить</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <button class="clock-check-btn" id="clock-check">Проверить всё</button>
+            </div>
+
+            <div class="clock-sidebar">
+                <h3>📖 Слова-помощники</h3>
+                <div class="clock-word-list">
+                    ${CLOCK_HINT_WORDS.map(h => `<div class="clock-word" data-word="${h.word}">${h.display}</div>`).join('')}
+                </div>
+                <button id="clock-hint-btn" class="clock-hint-btn">💡 Подсказка</button>
+            </div>
+        </div>
+
+        <style>
+            .clock-game-layout { display: flex; gap: 20px; justify-content: space-between; align-items: stretch; width: 100%; margin: 0 auto; flex-wrap: wrap; }
+            .clock-left { flex: 1 1 400px; min-width: 300px; }
+            .clock-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+            @media (max-width: 600px) { .clock-grid { grid-template-columns: 1fr; } }
+
+            .clock-card {
+                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+                border: 4px solid #FFF; border-radius: 18px; padding: 15px;
+                text-align: center; box-shadow: 0 8px 20px rgba(79,168,216,0.2);
+                transition: all 0.3s;
+            }
+            .clock-card.active-card { border-color: #FFB073; }
+            .analog-wrap { display: flex; justify-content: center; margin-bottom: 10px; height: 130px; align-items: center; }
+            .analog-clock-svg { width: 130px; height: 130px; display: block; }
+
+            .clock-input {
+                width: 100%; padding: 10px 14px; border: 3px solid #E0F2FC;
+                border-radius: 12px; font-family: inherit; font-size: 1.1rem;
+                text-align: center; outline: none; transition: border 0.2s; box-sizing: border-box;
+            }
+            .clock-input:focus { border-color: #4FA8D8; box-shadow: 0 0 0 3px rgba(79,168,216,0.2); }
+            .clock-input.correct { border-color: #4CAF50; background: #E8F5E9; }
+            .clock-input.wrong { border-color: #E53935; background: #FFEBEE; }
+
+            .clock-card-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+            .clock-voice-btn {
+                background: none; border: 3px solid #E0F2FC;
+                border-radius: 12px; padding: 8px 12px; font-size: 1rem;
+                cursor: pointer; transition: all 0.2s;
+            }
+            .clock-voice-btn:hover { background: #E0F2FC; }
+            .clock-voice-btn:disabled { opacity: 0.4; cursor: default; }
+
+            .clock-check-single-btn {
+                background: linear-gradient(135deg, #4CAF50 0%, #81C784 100%);
+                color: #FFF; border: 3px solid #FFF; border-radius: 12px;
+                padding: 8px 16px; font-family: inherit; font-weight: bold;
+                font-size: 0.9rem; cursor: pointer;
+                box-shadow: 0 4px 10px rgba(76,175,80,0.35); transition: all 0.2s;
+            }
+            .clock-check-single-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(76,175,80,0.5); }
+            .clock-check-single-btn:disabled { background: #B0B0B0; box-shadow: none; cursor: default; opacity: 0.6; }
+
+            .clock-check-btn {
+                display: block; margin: 20px auto 0; padding: 14px 40px;
+                background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
+                color: #FFF; border: 3px solid #FFF; border-radius: 18px;
+                font-family: inherit; font-weight: bold; font-size: 1.1rem;
+                cursor: pointer; box-shadow: 0 6px 18px rgba(79,168,216,0.4); transition: all 0.2s;
+            }
+            .clock-check-btn:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(79,168,216,0.55); }
+
+            .clock-sidebar {
+                flex: 0 0 380px; margin-left: auto; margin-right: 0; margin-top: 0;
+                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+                border: 4px solid #FFF; border-radius: 18px; padding: 20px;
+                box-shadow: 0 8px 20px rgba(79,168,216,0.2); text-align: center;
+                display: flex; flex-direction: column; height: 100%;
+            }
+            .clock-sidebar h3 { color: #2E7BAE; margin-bottom: 15px; font-size: 1.3rem; }
+
+            .clock-word-list {
+                display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+                flex: 1; max-height: 400px; overflow-y: auto;
+                background: rgba(255,255,255,0.6); border-radius: 12px;
+                padding: 10px; margin-bottom: 15px; border: 2px solid #E0F2FC;
+            }
+            .clock-word {
+                background: #FFF; padding: 8px 6px; border-radius: 8px;
+                font-weight: bold; color: #555; font-size: 1.1rem;
+                border: 2px solid #E0F2FC; transition: all 0.2s; word-break: break-word;
+                display: flex; align-items: center; justify-content: center;
+            }
+            .clock-word.highlighted {
+                background: linear-gradient(135deg, #FFE9B8 0%, #FFD6A8 100%);
+                border-color: #FF8C42; color: #E06A1E;
+                animation: clockWordPulse 0.5s ease;
+            }
+            @keyframes clockWordPulse {
+                0% { transform: scale(0.95); }
+                50% { transform: scale(1.08); }
+                100% { transform: scale(1); }
+            }
+
+            .clock-hint-btn {
+                width: 100%; padding: 14px;
+                background: linear-gradient(135deg, #FF8C42 0%, #FFB073 100%);
+                color: #FFF; border: 3px solid #FFF; border-radius: 15px;
+                font-family: inherit; font-weight: bold; font-size: 1.1rem;
+                cursor: pointer; box-shadow: 0 4px 12px rgba(255,140,66,0.4); transition: all 0.2s;
+            }
+            .clock-hint-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(255,140,66,0.55); }
+
+            .clock-input-diff {
+                display: block; width: 100%; box-sizing: border-box;
+                padding: 10px 14px; border: 3px solid #4CAF50;
+                border-radius: 12px; font-family: inherit; font-size: 1.1rem;
+                text-align: center; background: #E8F5E9; color: #1B5E20; font-weight: bold;
+            }
+            .clock-input-diff.failed { border-color: #E53935; background: #FFEBEE; color: #B71C1C; }
+            .clock-diff-added { color: #1B5E20; background: rgba(76,175,80,0.4); border-radius: 4px; padding: 0 3px; font-weight: 900; }
+            .clock-input-diff.failed .clock-diff-added { background: rgba(229,57,53,0.2); color: #B71C1C; }
+            .clock-diff-wrong { color: #C62828; text-decoration: line-through; opacity: 0.85; }
+            .clock-diff-annotation { font-size: 0.85rem; color: #888; margin-top: 6px; text-align: center; }
+            .clock-diff-typed { font-family: monospace; color: #999; }
+        </style>
+    `;
+
+    attachClockBonusButton();
+    setupClockBatchCommon(s, contentEl, '.clock-input', '.clock-card', () => renderClockLevel3(isBonus));
+
+    document.getElementById('clock-back').addEventListener('click', () => {
+        if (s.correctFirstTry > 0) {
+            if (!confirm('Выйти из игры? Прогресс раунда не сохранится.')) return;
+        }
+        if (clockState && clockState._cleanup) clockState._cleanup();
+        clockState = null;
+        renderAdultsGameList();
+    });
+}
+function renderClockLevel1() {
+    const s = clockState;
+    const batch = s.queue.slice(0, 5);
+    if (batch.length === 0) {
+        finishClockLevel();
+        return;
+    }
+    s.currentBatch = batch.map(t => ({ ...t, input: '', checked: false, firstTry: true, attempts: 0 }));
+    s.hintState = {};
+
+    contentEl.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+            <div class="games-header" style="text-align: left; margin-bottom: 0; padding-left: 5px;">
+                <h2 style="font-size: 2rem; margin-bottom: 5px; color: #2E7BAE;">🕐 Уровень 1 · Электронные часы</h2>
+                <p style="font-size: 1.15rem; color: #666; font-weight: normal;">Напиши, сколько времени по-английски, используя специальные слова</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="games-back-btn" id="clock-back" style="margin-bottom: 0; padding: 10px 15px;">← К играм</button>
+                <button id="clock-bonus-btn" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); border:3px solid #FFF; border-radius:50%; width:50px; height:50px; font-size:1.5rem; cursor:pointer; box-shadow:0 4px 12px rgba(255,165,0,0.4);">⭐</button>
+            </div>
+        </div>
+
+        <div class="clock-game-layout">
+            <div class="clock-left">
+                <div class="clock-grid" id="clock-grid">
+                    ${s.currentBatch.map((t, i) => `
+                        <div class="clock-card ${i === 0 ? 'active-card' : ''}" data-index="${i}">
+                            <div class="digital-clock-display">${clockDigitalDisplay(t.h, t.m)}</div>
+                            <input type="text" class="clock-input" data-index="${i}" autocomplete="off" spellcheck="false" autocapitalize="off">
+                            <div class="clock-card-actions">
+                                <button class="clock-voice-btn" data-index="${i}" title="Голосовой ввод">🎤</button>
+                                <button class="clock-check-single-btn" data-index="${i}">✓ Проверить</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <button class="clock-check-btn" id="clock-check">Проверить всё</button>
+            </div>
+
+            <div class="clock-sidebar">
+                <h3>📖 Слова-помощники</h3>
+                <div class="clock-word-list">
+                    ${CLOCK_HINT_WORDS.map(h => `<div class="clock-word" data-word="${h.word}">${h.display}</div>`).join('')}
+                </div>
+                <button id="clock-hint-btn" class="clock-hint-btn">💡 Подсказка</button>
+            </div>
+        </div>
+
+        <style>
+            .clock-game-layout { display: flex; gap: 20px; justify-content: space-between; align-items: stretch; width: 100%; margin: 0 auto; flex-wrap: wrap; }
+            .clock-left { flex: 1 1 400px; min-width: 300px; }
+            .clock-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+            @media (max-width: 600px) { .clock-grid { grid-template-columns: 1fr; } }
+
+            .clock-card {
+                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+                border: 4px solid #FFF; border-radius: 18px; padding: 15px;
+                text-align: center; box-shadow: 0 8px 20px rgba(79,168,216,0.2);
+                transition: all 0.3s;
+            }
+            .clock-card.active-card { border-color: #FFB073; }
+            
+            .digital-clock-display {
+                font-family: 'Courier New', monospace; font-size: 2.8rem; font-weight: bold;
+                color: #2E7BAE; background: #E0F2FC; border-radius: 12px;
+                padding: 8px 16px; display: inline-block; letter-spacing: 2px;
+                box-shadow: inset 0 0 10px rgba(0,0,0,0.1); margin-bottom: 12px;
+            }
+            .clock-input {
+                width: 100%; padding: 10px 14px; border: 3px solid #E0F2FC;
+                border-radius: 12px; font-family: inherit; font-size: 1.1rem;
+                text-align: center; outline: none; transition: border 0.2s; box-sizing: border-box;
+            }
+            .clock-input:focus { border-color: #4FA8D8; box-shadow: 0 0 0 3px rgba(79,168,216,0.2); }
+            .clock-input.correct { border-color: #4CAF50; background: #E8F5E9; }
+            .clock-input.wrong { border-color: #E53935; background: #FFEBEE; }
+
+            .clock-card-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+            .clock-voice-btn {
+                background: none; border: 3px solid #E0F2FC;
+                border-radius: 12px; padding: 8px 12px; font-size: 1rem;
+                cursor: pointer; transition: all 0.2s;
+            }
+            .clock-voice-btn:hover { background: #E0F2FC; }
+            .clock-voice-btn:disabled { opacity: 0.4; cursor: default; }
+
+            .clock-check-single-btn {
+                background: linear-gradient(135deg, #4CAF50 0%, #81C784 100%);
+                color: #FFF; border: 3px solid #FFF; border-radius: 12px;
+                padding: 8px 16px; font-family: inherit; font-weight: bold;
+                font-size: 0.9rem; cursor: pointer;
+                box-shadow: 0 4px 10px rgba(76,175,80,0.35); transition: all 0.2s;
+            }
+            .clock-check-single-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(76,175,80,0.5); }
+            .clock-check-single-btn:disabled { background: #B0B0B0; box-shadow: none; cursor: default; opacity: 0.6; }
+
+            .clock-check-btn {
+                display: block; margin: 20px auto 0; padding: 14px 40px;
+                background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
+                color: #FFF; border: 3px solid #FFF; border-radius: 18px;
+                font-family: inherit; font-weight: bold; font-size: 1.1rem;
+                cursor: pointer; box-shadow: 0 6px 18px rgba(79,168,216,0.4); transition: all 0.2s;
+            }
+            .clock-check-btn:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(79,168,216,0.55); }
+
+            /* Правая панель прижата к краю */
+            .clock-sidebar {
+                flex: 0 0 380px; margin-left: auto; margin-right: 0; margin-top: 0;
+                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+                border: 4px solid #FFF; border-radius: 18px; padding: 20px;
+                box-shadow: 0 8px 20px rgba(79,168,216,0.2); text-align: center;
+                display: flex; flex-direction: column; height: 100%;
+            }
+            .clock-sidebar h3 { color: #2E7BAE; margin-bottom: 15px; font-size: 1.3rem; }
+
+            .clock-word-list {
+                display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+                flex: 1; max-height: 400px; overflow-y: auto;
+                background: rgba(255,255,255,0.6); border-radius: 12px;
+                padding: 10px; margin-bottom: 15px; border: 2px solid #E0F2FC;
+            }
+            .clock-word {
+                background: #FFF; padding: 8px 6px; border-radius: 8px;
+                font-weight: bold; color: #555; font-size: 1.1rem;
+                border: 2px solid #E0F2FC; transition: all 0.2s; word-break: break-word;
+                display: flex; align-items: center; justify-content: center;
+            }
+            .clock-word.highlighted {
+                background: linear-gradient(135deg, #FFE9B8 0%, #FFD6A8 100%);
+                border-color: #FF8C42; color: #E06A1E;
+                animation: clockWordPulse 0.5s ease;
+            }
+            @keyframes clockWordPulse {
+                0% { transform: scale(0.95); }
+                50% { transform: scale(1.08); }
+                100% { transform: scale(1); }
+            }
+
+            .clock-hint-btn {
+                width: 100%; padding: 14px;
+                background: linear-gradient(135deg, #FF8C42 0%, #FFB073 100%);
+                color: #FFF; border: 3px solid #FFF; border-radius: 15px;
+                font-family: inherit; font-weight: bold; font-size: 1.1rem;
+                cursor: pointer; box-shadow: 0 4px 12px rgba(255,140,66,0.4); transition: all 0.2s;
+            }
+            .clock-hint-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(255,140,66,0.55); }
+
+            .clock-input-diff {
+                display: block; width: 100%; box-sizing: border-box;
+                padding: 10px 14px; border: 3px solid #4CAF50;
+                border-radius: 12px; font-family: inherit; font-size: 1.1rem;
+                text-align: center; background: #E8F5E9; color: #1B5E20; font-weight: bold;
+            }
+            .clock-input-diff.failed { border-color: #E53935; background: #FFEBEE; color: #B71C1C; }
+            .clock-diff-added { color: #1B5E20; background: rgba(76,175,80,0.4); border-radius: 4px; padding: 0 3px; font-weight: 900; }
+            .clock-input-diff.failed .clock-diff-added { background: rgba(229,57,53,0.2); color: #B71C1C; }
+            .clock-diff-wrong { color: #C62828; text-decoration: line-through; opacity: 0.85; }
+            .clock-diff-annotation { font-size: 0.85rem; color: #888; margin-top: 6px; text-align: center; }
+            .clock-diff-typed { font-family: monospace; color: #999; }
+        </style>
+    `;
+
+    attachClockBonusButton();
+    setupClockBatchCommon(s, contentEl, '.clock-input', '.clock-card', () => renderClockLevel1());
+
+    document.getElementById('clock-back').addEventListener('click', () => {
+        if (s.correctFirstTry > 0) {
+            if (!confirm('Выйти из игры? Прогресс раунда не сохранится.')) return;
+        }
+        if (clockState && clockState._cleanup) clockState._cleanup();
+        clockState = null;
+        renderAdultsGameList();
+    });
+}
+function renderClockLevel2() {
+    const s = clockState;
+    if (s.queue.length === 0) {
+        finishClockLevel();
+        return;
+    }
+    const t = s.queue[0];
+    const h12 = get12Hour(t.h);
+    const m = t.m;
+
+    contentEl.innerHTML = `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="clock-back">← К играм</button>
+        </div>
+        <div style="text-align:right; max-width:400px; margin:0 auto 10px;">
+            <button id="clock-bonus-btn" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); border:3px solid #FFF; border-radius:50%; width:50px; height:50px; font-size:1.5rem; cursor:pointer; box-shadow:0 4px 12px rgba(255,165,0,0.4);">⭐</button>
+        </div>
+        <div class="games-header">
+            <h2>🕐 Уровень 2 · Электронные часы</h2>
+            <p>Послушай время и впиши часы и минуты</p>
+        </div>
+        <div id="clock-level2-content"></div>
+        <style>
+            .clock-level2-card {
+                max-width: 400px;
+                margin: 0 auto;
+                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+                border: 4px solid #FFF;
+                border-radius: 22px;
+                padding: 30px 20px;
+                text-align: center;
+                box-shadow: 0 10px 25px rgba(79,168,216,0.2);
+            }
+            .digital-clock-inputs {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 10px;
+                font-size: 3rem;
+                font-weight: bold;
+                color: #2E7BAE;
+                margin-bottom: 20px;
+            }
+            .digital-clock-inputs input {
+                width: 80px;
+                height: 70px;
+                font-size: 2.5rem;
+                text-align: center;
+                border: 3px solid #E0F2FC;
+                border-radius: 15px;
+                font-family: 'Courier New', monospace;
+                font-weight: bold;
+                color: #2E7BAE;
+                outline: none;
+                background: #FFF;
+                transition: border 0.2s;
+            }
+            .digital-clock-inputs input:focus { border-color: #4FA8D8; }
+            .digital-clock-inputs input.correct { border-color: #4CAF50; background: #E8F5E9; }
+            .digital-clock-inputs input.wrong { border-color: #E53935; background: #FFEBEE; }
+            .clock-play-btn {
+                padding: 12px 24px;
+                background: linear-gradient(135deg, #FF8C42 0%, #FFB073 100%);
+                color: #FFF;
+                border: 3px solid #FFF;
+                border-radius: 18px;
+                font-family: inherit;
+                font-weight: bold;
+                font-size: 1rem;
+                cursor: pointer;
+                box-shadow: 0 6px 18px rgba(255,140,66,0.4);
+                transition: all 0.2s;
+                margin-bottom: 15px;
+            }
+            .clock-play-btn:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(255,140,66,0.55); }
+            .clock-check-btn2 {
+                display: block;
+                margin: 20px auto 0;
+                padding: 14px 40px;
+                background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
+                color: #FFF;
+                border: 3px solid #FFF;
+                border-radius: 18px;
+                font-family: inherit;
+                font-weight: bold;
+                font-size: 1rem;
+                cursor: pointer;
+                box-shadow: 0 6px 18px rgba(79,168,216,0.4);
+                transition: all 0.2s;
+            }
+            .clock-check-btn2:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(79,168,216,0.55); }
+        </style>
+    `;
+
+    const container = document.getElementById('clock-level2-content');
+    container.innerHTML = `
+        <div class="clock-level2-card">
+            <button class="clock-play-btn" id="clock-play2">🔊 Прослушать</button>
+            <div class="digital-clock-inputs">
+                <input type="text" id="clock-hour-input" maxlength="2" placeholder="HH" autocomplete="off">
+                <span>:</span>
+                <input type="text" id="clock-minute-input" maxlength="2" placeholder="MM" autocomplete="off">
+            </div>
+            <button class="clock-check-btn2" id="clock-check2">Проверить</button>
+            <button class="clock-voice-btn" id="clock-voice2" style="margin-top:10px;">🎤 Сказать время</button>
+        </div>
+    `;
+
+    attachClockBonusButton();
+
+    const playFn = () => speakWord(t.en);
+    setTimeout(playFn, 300);
+    document.getElementById('clock-play2').addEventListener('click', playFn);
+    document.getElementById('clock-check2').addEventListener('click', () => {
+    const hourInput = document.getElementById('clock-hour-input');
+    const minuteInput = document.getElementById('clock-minute-input');
+    const hVal = parseInt(hourInput.value, 10);
+    const mVal = parseInt(minuteInput.value, 10);
+    // Полночь = 00:00, полдень = 12:00
+    const displayHour = t.h === 0 ? 0 : get12Hour(t.h);
+    const correct = (hVal === displayHour) && (mVal === m);
+        if (correct) {
+            hourInput.classList.add('correct');
+            minuteInput.classList.add('correct');
+            hourInput.disabled = true;
+            minuteInput.disabled = true;
+            if (!t.isRepeat) s.correctFirstTry++;
+            s.queue.shift();
+            setTimeout(() => {
+                if (s.queue.length === 0) finishClockLevel();
+                else renderClockLevel2();
+            }, 1000);
+        } else {
+            hourInput.classList.add('wrong');
+            minuteInput.classList.add('wrong');
+            t.isRepeat = true;
+            setTimeout(() => {
+                hourInput.classList.remove('wrong');
+                minuteInput.classList.remove('wrong');
+            }, 1000);
+        }
+    });
+
+    document.getElementById('clock-voice2').addEventListener('click', () => {
+        if (!voiceAvailable()) return;
+        const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        rec.lang = 'en-GB';
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            if (isClockAnswerCorrect(transcript, t)) {
+                const displayHour = t.h === 0 ? 0 : get12Hour(t.h);
+                document.getElementById('clock-hour-input').value = displayHour;
+                document.getElementById('clock-minute-input').value = m;
+                showVoiceToast('Верно!');
+            } else {
+                showVoiceToast('Не расслышал, попробуй ещё раз', true);
+            }
+        };
+        rec.onerror = () => showVoiceToast('Ошибка распознавания', true);
+        rec.start();
+    });
+document.getElementById('clock-back').addEventListener('click', () => {
+        if (s.correctFirstTry > 0) {
+            if (!confirm('Выйти из игры? Прогресс раунда не сохранится.')) return;
+        }
+        if (clockState && clockState._cleanup) clockState._cleanup();
+        clockState = null;
+        renderAdultsGameList();
+    });
+}
+
+
+
+function renderClockLevel4() {
+    const s = clockState;
+    if (s.queue.length === 0) {
+        finishClockLevel();
+        return;
+    }
+    const t = s.queue[0];
+    s.currentH = 12;
+    s.currentM = 0;
+
+    contentEl.innerHTML = `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="clock-back">← К играм</button>
+        </div>
+        <div style="text-align:right; max-width:500px; margin:0 auto 10px;">
+            <button id="clock-bonus-btn" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); border:3px solid #FFF; border-radius:50%; width:50px; height:50px; font-size:1.5rem; cursor:pointer; box-shadow:0 4px 12px rgba(255,165,0,0.4);">⭐</button>
+        </div>
+        <div class="games-header">
+            <h2>🕐 Уровень 4 · Механические часы</h2>
+            <p>Послушай время и поставь стрелки</p>
+        </div>
+        <div id="clock-level4-content"></div>
+        <style>
+            .clock-level4-card {
+                max-width: 500px;
+                margin: 0 auto;
+                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+                border: 4px solid #FFF;
+                border-radius: 22px;
+                padding: 30px 20px;
+                text-align: center;
+                box-shadow: 0 10px 25px rgba(79,168,216,0.2);
+            }
+            .interactive-clock {
+                width: 320px;
+                height: 320px;
+                margin: 0 auto 20px;
+                display: block;
+                user-select: none;
+                -webkit-user-select: none;
+                touch-action: none;
+            }
+            .clock-play-btn4 {
+                padding: 12px 24px;
+                background: linear-gradient(135deg, #FF8C42 0%, #FFB073 100%);
+                color: #FFF;
+                border: 3px solid #FFF;
+                border-radius: 18px;
+                font-family: inherit;
+                font-weight: bold;
+                font-size: 1rem;
+                cursor: pointer;
+                box-shadow: 0 6px 18px rgba(255,140,66,0.4);
+                transition: all 0.2s;
+                margin-bottom: 15px;
+            }
+            .clock-play-btn4:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(255,140,66,0.55); }
+            .clock-check-btn4 {
+                display: block;
+                margin: 20px auto 0;
+                padding: 14px 40px;
+                background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
+                color: #FFF;
+                border: 3px solid #FFF;
+                border-radius: 18px;
+                font-family: inherit;
+                font-weight: bold;
+                font-size: 1rem;
+                cursor: pointer;
+                box-shadow: 0 6px 18px rgba(79,168,216,0.4);
+                transition: all 0.2s;
+            }
+            .clock-check-btn4:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(79,168,216,0.55); }
+        </style>
+    `;
+
+    const container = document.getElementById('clock-level4-content');
+    container.innerHTML = `
+        <div class="clock-level4-card">
+            <button class="clock-play-btn4" id="clock-play4">🔊 Прослушать</button>
+            <div id="interactive-clock-wrapper"></div>
+            <button class="clock-check-btn4" id="clock-check4">Проверить</button>
+            <button class="clock-voice-btn" id="clock-voice4" style="margin-top:10px;">🎤 Сказать время</button>
+        </div>
+    `;
+
+    attachClockBonusButton();
+
+    const playFn = () => speakWord(t.en);
+    setTimeout(playFn, 300);
+    document.getElementById('clock-play4').addEventListener('click', playFn);
+
+    const wrapper = document.getElementById('interactive-clock-wrapper');
+    if (s._cleanup) s._cleanup();
+    renderInteractiveClock(wrapper, s.currentH, s.currentM, (newH, newM) => {
+        s.currentH = newH;
+        s.currentM = newM;
+    });
+    s._cleanup = wrapper._cleanup;
+
+    document.getElementById('clock-check4').addEventListener('click', () => {
+        const targetH12 = get12Hour(t.h);
+        const targetM = t.m;
+        const correct = (s.currentH % 12 === targetH12 % 12) && (s.currentM === targetM);
+        if (correct) {
+            if (!t.isRepeat) s.correctFirstTry++;
+            s.queue.shift();
+            if (s._cleanup) { s._cleanup(); s._cleanup = null; }
+            setTimeout(() => {
+                if (s.queue.length === 0) finishClockLevel();
+                else renderClockLevel4();
+            }, 1000);
+        } else {
+            t.isRepeat = true;
+            showVoiceToast('Неверно, попробуй ещё раз', true);
+        }
+    });
+
+    document.getElementById('clock-voice4').addEventListener('click', () => {
+        if (!voiceAvailable()) return;
+        const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        rec.lang = 'en-GB';
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            if (isClockAnswerCorrect(transcript, t)) {
+                s.currentH = get12Hour(t.h);
+                s.currentM = t.m;
+                if (s._cleanup) s._cleanup();
+                renderInteractiveClock(wrapper, s.currentH, s.currentM, (newH, newM) => {
+                    s.currentH = newH;
+                    s.currentM = newM;
+                });
+                s._cleanup = wrapper._cleanup;
+                showVoiceToast('Верно!');
+            } else {
+                showVoiceToast('Не расслышал, попробуй ещё раз', true);
+            }
+        };
+        rec.onerror = () => showVoiceToast('Ошибка распознавания', true);
+        rec.start();
+    });
+    document.getElementById('clock-back').addEventListener('click', () => {
+        if (s.correctFirstTry > 0) {
+            if (!confirm('Выйти из игры? Прогресс раунда не сохранится.')) return;
+        }
+        if (clockState && clockState._cleanup) clockState._cleanup();
+        clockState = null;
+        renderAdultsGameList();
+    });
+}
+
+function renderInteractiveClock(wrapper, h, m, onChange) {
+    let currentH = h % 12 || 12;
+    let currentM = m;
+
+    function getHandAngles(h, m) {
+        return {
+            hourAngle: (h % 12) * 30 + m * 0.5,
+            minuteAngle: m * 6
+        };
+    }
+
+    function updateHands() {
+        const cx = 160, cy = 160;
+        const { hourAngle, minuteAngle } = getHandAngles(currentH, currentM);
+        const hourRad = (hourAngle - 90) * Math.PI / 180;
+        const minRad = (minuteAngle - 90) * Math.PI / 180;
+        const hx = cx + Math.cos(hourRad) * 80;
+        const hy = cy + Math.sin(hourRad) * 80;
+        const mx = cx + Math.cos(minRad) * 110;
+        const my = cy + Math.sin(minRad) * 110;
+
+        document.getElementById('clock-hour-hand').setAttribute('x2', hx);
+        document.getElementById('clock-hour-hand').setAttribute('y2', hy);
+        document.getElementById('clock-minute-hand').setAttribute('x2', mx);
+        document.getElementById('clock-minute-hand').setAttribute('y2', my);
+        document.getElementById('clock-hour-handle').setAttribute('cx', hx);
+        document.getElementById('clock-hour-handle').setAttribute('cy', hy);
+        document.getElementById('clock-minute-handle').setAttribute('cx', mx);
+        document.getElementById('clock-minute-handle').setAttribute('cy', my);
+    }
+
+    function buildSvg() {
+        const cx = 160, cy = 160, r = 140;
+        let ticks = '';
+        let numbers = '';
+        for (let i = 0; i < 12; i++) {
+            const angle = i * 30;
+            const rad = (angle - 90) * Math.PI / 180;
+            const x1 = cx + Math.cos(rad) * (r - 15);
+            const y1 = cy + Math.sin(rad) * (r - 15);
+            const x2 = cx + Math.cos(rad) * r;
+            const y2 = cy + Math.sin(rad) * r;
+            ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#333" stroke-width="3"/>`;
+            const numRad = (angle - 90) * Math.PI / 180;
+            const nx = cx + Math.cos(numRad) * (r - 40);
+            const ny = cy + Math.sin(numRad) * (r - 40) + 6;
+            let label = i === 0 ? 12 : i;
+            numbers += `<text x="${nx}" y="${ny}" text-anchor="middle" font-size="22" font-weight="bold" fill="#333">${label}</text>`;
+        }
+
+        const { hourAngle, minuteAngle } = getHandAngles(currentH, currentM);
+        const hourRad = (hourAngle - 90) * Math.PI / 180;
+        const minRad = (minuteAngle - 90) * Math.PI / 180;
+        const hx = cx + Math.cos(hourRad) * 80;
+        const hy = cy + Math.sin(hourRad) * 80;
+        const mx = cx + Math.cos(minRad) * 110;
+        const my = cy + Math.sin(minRad) * 110;
+
+        return `
+            <svg id="interactive-clock-svg" viewBox="0 0 320 320" class="interactive-clock">
+                <circle cx="${cx}" cy="${cy}" r="${r}" fill="#FFF" stroke="#2E7BAE" stroke-width="6"/>
+                ${ticks}
+                ${numbers}
+                <line id="clock-hour-hand" x1="${cx}" y1="${cy}" x2="${hx}" y2="${hy}" stroke="#2E7BAE" stroke-width="10" stroke-linecap="round"/>
+                <line id="clock-minute-hand" x1="${cx}" y1="${cy}" x2="${mx}" y2="${my}" stroke="#E06A1E" stroke-width="6" stroke-linecap="round"/>
+                <circle id="clock-hour-handle" cx="${hx}" cy="${hy}" r="18" fill="transparent" cursor="grab"/>
+                <circle id="clock-minute-handle" cx="${mx}" cy="${my}" r="18" fill="transparent" cursor="grab"/>
+                <circle cx="${cx}" cy="${cy}" r="8" fill="#333"/>
+            </svg>
+        `;
+    }
+
+    wrapper.innerHTML = buildSvg();
+
+    const svg = document.getElementById('interactive-clock-svg');
+    const hourHandle = document.getElementById('clock-hour-handle');
+    const minuteHandle = document.getElementById('clock-minute-handle');
+
+    let dragging = null;
+
+    function getAngleFromEvent(e) {
+        const rect = svg.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+        let angle = Math.atan2(y - cy, x - cx) * 180 / Math.PI + 90;
+        if (angle < 0) angle += 360;
+        return angle;
+    }
+
+    function startDrag(hand) {
+        return function(e) {
+            e.preventDefault();
+            dragging = hand;
+        };
+    }
+
+    hourHandle.addEventListener('mousedown', startDrag('hour'));
+    hourHandle.addEventListener('touchstart', startDrag('hour'), { passive: false });
+    minuteHandle.addEventListener('mousedown', startDrag('minute'));
+    minuteHandle.addEventListener('touchstart', startDrag('minute'), { passive: false });
+
+    function onMove(e) {
+        if (!dragging) return;
+        e.preventDefault();
+        const angle = getAngleFromEvent(e);
+        if (dragging === 'minute') {
+            let minutes = Math.round(angle / 6) * 6;
+            if (minutes === 60) minutes = 0;
+            currentM = minutes;
+        } else if (dragging === 'hour') {
+            let hour = Math.round(angle / 30);
+            if (hour === 0) hour = 12;
+            if (hour > 12) hour -= 12;
+            currentH = hour;
+        }
+        updateHands();
+        if (onChange) onChange(currentH, currentM);
+    }
+
+    function onUp() {
+        dragging = null;
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchend', onUp);
+
+    wrapper._cleanup = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchend', onUp);
+    };
+}
+
+function attachVoiceToInput(inputEl, timeObj) {
+    if (!voiceAvailable()) {
+        showVoiceToast('Голосовой ввод недоступен', true);
+        return;
+    }
+    const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    rec.lang = 'en-GB';
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (isClockAnswerCorrect(transcript, timeObj)) {
+            inputEl.value = timeObj.en;
+            showVoiceToast('Верно!');
+        } else {
+            showVoiceToast('Не расслышал, попробуй ещё раз', true);
+        }
+    };
+    rec.onerror = () => showVoiceToast('Ошибка распознавания', true);
+    rec.start();
+}
+
+function finishClockLevel() {
+    const s = clockState;
+    if (!s) return;
+
+    const total = s.totalUnique;
+    const need = Math.ceil(total * 0.7);
+    const passed = s.correctFirstTry >= need;
+    const percent = Math.round((s.correctFirstTry / total) * 100);
+    const isLast = s.level === 4;
+    const isBonus = s.level === 'bonus';
+
+    let emoji = '😔', message = 'Попробуй ещё раз!';
+    if (passed) {
+        if (percent === 100) emoji = '🏆', message = 'Идеально!';
+        else if (percent >= 90) emoji = '🌟', message = 'Превосходно!';
+        else emoji = '🎉', message = 'Отличная работа!';
+    } else if (percent >= 50) {
+        emoji = '💪'; message = 'Почти получилось!';
+    }
+
+    let subtitle = '';
+    let primaryBtn = '';
+
+    if (isBonus) {
+        if (passed) {
+            subtitle = 'Ты прошёл бонусный уровень с римскими цифрами! 🎉';
+            primaryBtn = `<button class="sg-btn-primary" id="clock-restart">🔄 Играть заново</button>`;
+        } else {
+            subtitle = `Чтобы пройти бонусный уровень, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="clock-retry">🔄 Попробовать снова</button>`;
+        }
+    } else if (isLast) {
+        if (passed) {
+            subtitle = 'Ты прошёл все четыре уровня игры «Часы»! 🎉';
+            primaryBtn = `<button class="sg-btn-primary" id="clock-restart">🔄 Играть заново</button>`;
+        } else {
+            subtitle = `Чтобы завершить игру, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="clock-retry">🔄 Попробовать снова</button>`;
+        }
+    } else {
+        if (passed) {
+            subtitle = `Уровень ${s.level} пройден! Дальше — уровень ${s.level + 1}`;
+            primaryBtn = `<button class="sg-btn-primary" id="clock-next">▶ Уровень ${s.level + 1}</button>`;
+        } else {
+            subtitle = `Чтобы перейти дальше, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="clock-retry">🔄 Попробовать снова</button>`;
+        }
+    }
+
+    contentEl.innerHTML = `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="clock-back">← К играм</button>
+        </div>
+        <div class="games-header">
+            <h2>${isBonus ? 'Бонусный уровень' : 'Уровень ' + s.level}${isLast ? ' · финальный' : ''}</h2>
+        </div>
+        <div class="sg-container">
+            <div class="sg-complete">
+                <div class="sg-complete-emoji">${emoji}</div>
+                <h2>${message}</h2>
+                <div class="sg-complete-score">${s.correctFirstTry} / ${total} · ${percent}%</div>
+                <div class="sg-complete-status ${passed ? 'passed' : 'failed'}">
+                    ${passed ? '✓ Уровень пройден' : `✗ Не хватило ${need - s.correctFirstTry} правильных`}
+                </div>
+
+                ${buildClockLevelNavHtml(s.level)}
+
+                <p style="color:#6A6A6A; margin-bottom:20px;">${subtitle}</p>
+                <div class="sg-complete-actions">
+                    ${primaryBtn}
+                    <button class="sg-btn-secondary" id="clock-back-games">← К играм</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const backToGames = () => {
+        if (s._cleanup) s._cleanup();
+        clockState = null;
+        renderAdultsGameList();
+    };
+    document.getElementById('clock-back').addEventListener('click', backToGames);
+    document.getElementById('clock-back-games').addEventListener('click', backToGames);
+
+    const retry = document.getElementById('clock-retry');
+    if (retry) retry.addEventListener('click', () => startClockLevel(s.level));
+
+    const next = document.getElementById('clock-next');
+    if (next) next.addEventListener('click', () => startClockLevel(s.level + 1));
+
+    const restart = document.getElementById('clock-restart');
+    if (restart) restart.addEventListener('click', () => startClockLevel(1));
+    // === НАВИГАЦИЯ ПО УРОВНЯМ ===
+    attachLevelNavHandlers(s.level, (lvl) => startClockLevel(lvl));
+}
+// ============================================================
 // ПЕРЕКЛЮЧЕНИЕ РАЗДЕЛОВ
 // ============================================================
 // ============================================================
@@ -15033,6 +16918,44 @@ function sgShuffle(arr) {
         [a[i], a[j]] = [a[j], a[i]];
     }
     return a;
+}
+// === ХЕЛПЕРЫ: навигация по уровням ===
+
+// Обычные игры: номера 1, 2, 3, ...
+function buildLevelNavHtml(currentLevel, totalLevels, levelTitles) {
+    let html = '<div class="level-jump-bar">';
+    for (let i = 1; i <= totalLevels; i++) {
+        const isActive = i === currentLevel;
+        const title = (levelTitles && levelTitles[i - 1]) ? levelTitles[i - 1] : 'Уровень ' + i;
+        html += `<button data-level-jump="${i}" class="level-jump-btn ${isActive ? 'active' : ''}" title="${title}">${i}</button>`;
+    }
+    html += '</div>';
+    return html;
+}
+
+// Только для «Часов»: уровни 1, 2, 3, 4 и ⭐ (бонус)
+function buildClockLevelNavHtml(currentLevel) {
+    const levels = [1, 2, 3, 4, 'bonus'];
+    let html = '<div class="level-jump-bar">';
+    levels.forEach(lvl => {
+        const isActive = lvl === currentLevel;
+        const label = lvl === 'bonus' ? '⭐' : lvl;
+        const title = lvl === 'bonus' ? 'Бонусный уровень' : 'Уровень ' + lvl;
+        html += `<button data-level-jump="${lvl}" class="level-jump-btn ${isActive ? 'active' : ''}" title="${title}">${label}</button>`;
+    });
+    html += '</div>';
+    return html;
+}
+
+// Привязка кликов к этим кнопкам
+function attachLevelNavHandlers(currentLevel, onJump) {
+    document.querySelectorAll('[data-level-jump]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const raw = btn.dataset.levelJump;
+            const target = raw === 'bonus' ? 'bonus' : parseInt(raw, 10);
+            if (target !== currentLevel) onJump(target);
+        });
+    });
 }
 
 let sgState = null;
@@ -15184,14 +17107,17 @@ function renderShapesQuestion() {
                 else if (j === i) b.classList.add('wrong');
             });
 
-            if (isCorrect) {
-                if (!item.isRepeat) s.correctFirstTry++; 
-                // На 1 уровне не озвучиваем при клике, так как слово только что прозвучало автоматически
-                if (s.level !== 1) speakWord(correctAnswer);
-                
-                s.queue.shift(); // Убираем вопрос из очереди
-                setTimeout(() => { s.answered = false; renderShapesQuestion(); }, 850);
-            } else {
+if (isCorrect) {
+    if (!item.isRepeat) s.correctFirstTry++;
+
+    // Озвучка после правильного ответа на 2 и 3 уровнях
+    if (s.level === 2 || s.level === 3) {
+        speakWord(correctAnswer);
+    }
+
+    s.queue.shift();
+    setTimeout(() => { s.answered = false; renderShapesQuestion(); }, 850);
+} else {
                            
                 item.isRepeat = true; // Запоминаем, что была ошибка
                 speakWord(correctAnswer); // При ошибке всегда озвучиваем правильный ответ
@@ -15293,6 +17219,9 @@ function finishShapesLevel() {
                 <div class="sg-complete-status ${passed ? 'passed' : 'failed'}">
                     ${passed ? '✓ Уровень пройден' : `✗ Не хватило ${need - s.correctFirstTry} правильных`}
                 </div>
+
+                ${buildLevelNavHtml(s.level, 4, ['Слушай и выбирай', 'Какая это фигура?', 'Прочитай и выбери', 'Форма вокруг нас'])}
+
                 <p style="color:#6A6A6A; margin-bottom:20px;">${subtitle}</p>
                 <div class="sg-complete-actions">
                     ${primaryBtn}
@@ -15321,6 +17250,8 @@ function finishShapesLevel() {
             startShapesLevel(1, false);
         });
     }
+    // === НАВИГАЦИЯ ПО УРОВНЯМ ===
+    attachLevelNavHandlers(s.level, (lvl) => startShapesLevel(lvl, false));
 }
 
 
@@ -15517,13 +17448,17 @@ function renderColorsQuestion() {
                 if (options[j] === correctAnswer) b.classList.add('correct');
                 else if (j === i) b.classList.add('wrong');
             });
+                 if (isCorrect) {
+                  if (!item.isRepeat) s.correctFirstTry++;
 
-            if (isCorrect) {
-                if (!item.isRepeat) s.correctFirstTry++;
-                if (s.level !== 1) speakWord(correctAnswer);
-                s.queue.shift();
-                setTimeout(() => { s.answered = false; renderColorsQuestion(); }, 900);
-              } else {
+                 // Озвучка после правильного ответа на 2, 3 и 4 уровнях
+                     if (s.level >= 2) {
+                      speakWord(correctAnswer);
+               }
+
+          s.queue.shift();
+         setTimeout(() => { s.answered = false; renderColorsQuestion(); }, 900);
+        } else {
                 item.isRepeat = true;
                 speakWord(correctAnswer);
                 setTimeout(() => {
@@ -15612,6 +17547,9 @@ function finishColorsLevel() {
                 <div class="sg-complete-status ${passed ? 'passed' : 'failed'}">
                     ${passed ? '✓ Уровень пройден' : `✗ Не хватило ${need - s.correctFirstTry} правильных`}
                 </div>
+
+                ${buildLevelNavHtml(s.level, 3, ['Слушай и выбирай', 'Найди цвет', 'Назови цвет'])}
+
                 <p style="color:#6A6A6A; margin-bottom:20px;">${subtitle}</p>
                 <div class="sg-complete-actions">
                     ${primaryBtn}
@@ -15633,6 +17571,8 @@ function finishColorsLevel() {
 
     const restart = document.getElementById('colors-restart');
     if (restart) restart.addEventListener('click', () => startColorsLevel(1));
+    // === НАВИГАЦИЯ ПО УРОВНЯМ ===
+    attachLevelNavHandlers(s.level, (lvl) => startColorsLevel(lvl));
 }
 // ⬆⬆⬆ КОНЕЦ КОДА ИГРЫ "ЦВЕТА" ⬆⬆⬆
 // ============================================================
@@ -15670,6 +17610,27 @@ const NUMBER_GAME_DATA = [
     { en: 'one hundred', ru: 'сто',           digit: '100' }
 ];
 
+// Созвучные числа (для подбора «похожих» дистракторов).
+// Правило: teen ↔ -ty (13↔30, 14↔40, ..., 19↔90).
+// Исключения: 13↔14 и 30↔40.
+// Остальные числа (0–12, 20, 100) — без созвучных, добираются случайными.
+const SIMILAR_NUMBERS_MAP = {
+    '13': ['30', '14'],
+    '14': ['40', '13'],
+    '15': ['50'],
+    '16': ['60'],
+    '17': ['70'],
+    '18': ['80'],
+    '19': ['90'],
+    '30': ['13', '40'],
+    '40': ['14', '30'],
+    '50': ['15'],
+    '60': ['16'],
+    '70': ['17'],
+    '80': ['18'],
+    '90': ['19'],
+};
+
 const NUMBERS_QUESTIONS_PER_LEVEL = 10;
 const NUMBERS_PASS_RATIO = 0.7;
 
@@ -15692,6 +17653,40 @@ function startNumbersLevel(levelNum) {
         answered: false
     };
     renderNumbersQuestion();
+}
+function getNumbersOptions(item, optionsAreDigits, correctAnswer) {
+    const correctDigit = item.digit;
+
+    // Отображение: как цифра (уровни 1–2) или как английское слово (уровень 3)
+    const digitToDisplay = (d) => {
+        if (optionsAreDigits) return d;
+        const n = NUMBER_GAME_DATA.find(x => x.digit === d);
+        return n ? n.en : d;
+    };
+
+    const similar = SIMILAR_NUMBERS_MAP[correctDigit] || [];
+    const wrong = [];
+
+    for (const d of similar) {
+        if (wrong.length >= 3) break;
+        const disp = digitToDisplay(d);
+        if (disp !== correctAnswer && !wrong.includes(disp)) {
+            wrong.push(disp);
+        }
+    }
+
+    // Если созвучных меньше трёх — добираем случайными
+    if (wrong.length < 3) {
+        const fallback = NUMBER_GAME_DATA
+            .filter(n => n.digit !== correctDigit)
+            .map(n => digitToDisplay(n.digit))
+            .filter(d => d !== correctAnswer && !wrong.includes(d));
+        sgShuffle(fallback).forEach(d => {
+            if (wrong.length < 3) wrong.push(d);
+        });
+    }
+
+    return sgShuffle([correctAnswer, ...wrong]);
 }
 
 function renderNumbersQuestion() {
@@ -15732,13 +17727,7 @@ function renderNumbersQuestion() {
         optionsAreDigits = false;
         correctAnswer = item.en;
     }
-
-    const allPool = optionsAreDigits
-        ? NUMBER_GAME_DATA.map(n => n.digit)
-        : NUMBER_GAME_DATA.map(n => n.en);
-    const wrongPool = allPool.filter(x => x !== correctAnswer);
-    const wrongs = sgShuffle(wrongPool).slice(0, 3);
-    const options = sgShuffle([correctAnswer, ...wrongs]);
+    const options = getNumbersOptions(item, optionsAreDigits, correctAnswer);
 
     const optionsHtml = options.map((opt, i) => {
         const cls = optionsAreDigits ? 'sg-option sg-number-option' : 'sg-option';
@@ -15783,6 +17772,14 @@ function renderNumbersQuestion() {
         const playFn = () => speakWord(item.en);
         setTimeout(playFn, 300);
         document.getElementById('numbers-play').addEventListener('click', playFn);
+    } else if (s.level === 2) {
+        // Озвучиваем слово ОДИН раз при появлении вопроса.
+        // Защита: если ребёнок успел ответить или вопрос уже сменился — не произносим.
+        setTimeout(() => {
+            if (s.answered) return;
+            if (s.queue[0] !== item) return;
+            speakWord(item.en);
+        }, 300);
     }
 
     document.getElementById('numbers-back').addEventListener('click', () => {
@@ -15808,18 +17805,19 @@ function renderNumbersQuestion() {
 
             if (isCorrect) {
                 if (!item.isRepeat) s.correctFirstTry++;
-                if (s.level !== 1) speakWord(item.en);
                 s.queue.shift();
                 setTimeout(() => { s.answered = false; renderNumbersQuestion(); }, 900);
             } else {
                 item.isRepeat = true;
-                speakWord(item.en);
+                // На уровне 2 слово уже звучало при появлении вопроса — не повторяем.
+                // На уровнях 1 и 3 озвучиваем как подсказку правильного ответа.
+                if (s.level !== 2) speakWord(item.en);
                 setTimeout(() => {
                     s.queue.shift();
                     s.queue.push(item);
                     s.answered = false;
                     renderNumbersQuestion();
-                }, 1500);
+                }, s.level === 2 ? 900 : 1500);
             }
         });
     });
@@ -15896,6 +17894,9 @@ function finishNumbersLevel() {
                 <div class="sg-complete-status ${passed ? 'passed' : 'failed'}">
                     ${passed ? '✓ Уровень пройден' : `✗ Не хватило ${need - s.correctFirstTry} правильных`}
                 </div>
+
+                ${buildLevelNavHtml(s.level, 3, ['Слушай и выбирай', 'Слово → число', 'Назови число'])}
+
                 <p style="color:#6A6A6A; margin-bottom:20px;">${subtitle}</p>
                 <div class="sg-complete-actions">
                     ${primaryBtn}
@@ -15917,6 +17918,8 @@ function finishNumbersLevel() {
 
     const restart = document.getElementById('numbers-restart');
     if (restart) restart.addEventListener('click', () => startNumbersLevel(1));
+    // === НАВИГАЦИЯ ПО УРОВНЯМ ===
+    attachLevelNavHandlers(s.level, (lvl) => startNumbersLevel(lvl));
 }
 // ============================================================
 // КОНЕЦ ИГРЫ "ЧИСЛА"
@@ -15997,7 +18000,7 @@ function loadVoiceEnabled() {
     return raw === null ? true : raw === '1';
 }
 function saveVoiceEnabled(v) { localStorage.setItem(VOICE_KEY, v ? '1' : '0'); }
-let voiceEnabled = loadVoiceEnabled();
+voiceEnabled = loadVoiceEnabled();       // ← СТАЛО: просто присваивание
 
 function voiceAvailable() {
     return voiceEnabled && voiceSupport.supported && voiceSupport.secure;
