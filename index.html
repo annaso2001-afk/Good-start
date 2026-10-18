@@ -1390,6 +1390,113 @@ body.dark-theme .fc-emoji i {
     word-break: break-word;
     text-shadow: 2px 2px 0 #FFF, 4px 4px 10px rgba(79,168,216,0.25);
 }
+
+/* === ГОЛОСОВОЙ ВВОД === */
+.voice-toggle {
+    position: fixed !important;
+    bottom: 25px !important;
+    right: 240px !important;
+    width: 55px !important;
+    height: 55px !important;
+    border-radius: 50% !important;
+    background: linear-gradient(135deg, #9C27B0 0%, #BA68C8 100%) !important;
+    border: 4px solid #FFF !important;
+    color: #FFF !important;
+    font-size: 1.4rem !important;
+    cursor: pointer !important;
+    box-shadow: 0 6px 20px rgba(156,39,176,0.5) !important;
+    z-index: 100 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.2s !important;
+}
+.voice-toggle:hover { transform: scale(1.1); }
+.voice-toggle.muted {
+    background: linear-gradient(135deg, #B0B0B0 0%, #C8C8C8 100%) !important;
+}
+.voice-toggle.hidden { display: none !important; }
+
+.voice-btn-wrap {
+    text-align: center;
+    margin-top: 20px;
+}
+.voice-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 26px;
+    background: linear-gradient(135deg, #9C27B0 0%, #BA68C8 100%);
+    color: #FFF;
+    border: 3px solid #FFF;
+    border-radius: 18px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(156,39,176,0.4);
+    transition: all 0.2s;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: none;
+}
+.voice-btn:hover:not(.listening) {
+    transform: translateY(-2px);
+    box-shadow: 0 9px 22px rgba(156,39,176,0.55);
+}
+.voice-btn.listening {
+    background: linear-gradient(135deg, #E53935 0%, #EF5350 100%);
+    animation: voicePulse 1s ease infinite;
+    box-shadow: 0 0 0 6px rgba(229,57,53,0.25), 0 6px 18px rgba(229,57,53,0.55);
+}
+@keyframes voicePulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.05); }
+}
+.voice-btn.success {
+    background: linear-gradient(135deg, #4CAF50 0%, #81C784 100%);
+    box-shadow: 0 0 0 6px rgba(76,175,80,0.3), 0 6px 18px rgba(76,175,80,0.5);
+}
+.voice-btn.no-match { animation: voiceShake 0.5s ease; }
+@keyframes voiceShake {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-6px); }
+    40%      { transform: translateX(6px); }
+    60%      { transform: translateX(-4px); }
+    80%      { transform: translateX(4px); }
+}
+.voice-btn .voice-icon { font-size: 1.3rem; }
+
+.voice-toast {
+    position: fixed;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #FF8C42 0%, #FFB073 100%);
+    color: #FFF;
+    padding: 12px 22px;
+    border-radius: 18px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: 0.95rem;
+    box-shadow: 0 8px 25px rgba(255,140,66,0.5);
+    z-index: 4000;
+    animation: voiceToastIn 0.3s ease;
+    max-width: 90vw;
+    text-align: center;
+}
+@keyframes voiceToastIn {
+    from { opacity: 0; transform: translate(-50%, 15px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.voice-toast.error {
+    background: linear-gradient(135deg, #E53935 0%, #EF5350 100%);
+}
+@media (max-width: 700px) {
+    .voice-toggle { right: 200px !important; width: 48px !important; height: 48px !important; font-size: 1.2rem !important; }
+    .voice-btn { padding: 12px 20px; font-size: 0.9rem; }
+}
 </style>
 </head>
 <body>
@@ -1441,8 +1548,9 @@ body.dark-theme .fc-emoji i {
        <button class="sidebar-toggle" id="sidebar-toggle" title="Мой словарик">
         📖<span class="dict-counter" id="dict-counter">0</span>
     </button>
-    <button class="sound-toggle" id="sound-toggle" title="Включить/выключить звук">🔊</button>
-    <button class="theme-toggle" id="theme-toggle" title="Переключить тему">🌙</button>
+     <button class="sound-toggle" id="sound-toggle" title="Включить/выключить звук">🔊</button>
+     <button class="theme-toggle" id="theme-toggle" title="Переключить тему">🌙</button>
+     <button class="voice-toggle hidden" id="voice-toggle" title="Голосовой ввод вкл/выкл">🎤</button>
 
 
 <script>
@@ -13342,12 +13450,53 @@ function renderBuildWordQuestion() {
         });
     });
 
-    container.querySelectorAll('.bw-slot').forEach(slot => {
+      container.querySelectorAll('.bw-slot').forEach(slot => {
         slot.addEventListener('click', () => {
             const i = parseInt(slot.dataset.slotIndex, 10);
             removeFromSlot(i);
         });
     });
+
+    // === Голосовой ввод: сказал слово → автозаполнение ===
+    if (voiceAvailable()) {
+        const bwContainer = container.querySelector('.bw-container');
+        if (bwContainer) {
+            attachVoiceButton(bwContainer, {
+                lang: 'en-GB',
+                validAnswers: [s.currentWord.en],
+                onMatch: () => {
+                    if (s.finished) return;
+                    const target = s.currentWord.en.toUpperCase();
+                    const newSlots = new Array(s.letters.length).fill(null);
+                    const usedIds = new Set();
+
+                    for (let i = 0; i < target.length && i < newSlots.length; i++) {
+                        const letter = target[i];
+                        const found = s.letters.find(l => !usedIds.has(l.id) && l.letter.toUpperCase() === letter);
+                        if (found) {
+                            usedIds.add(found.id);
+                            newSlots[i] = found.id;
+                        }
+                    }
+                    s.slots = newSlots;
+                    updateBwUI();
+
+                    const assembled = s.slots.map(id => id !== null ? s.letters[id].letter : '').join('');
+                    if (assembled.toLowerCase() === s.currentWord.en.toLowerCase()) {
+                        s.finished = true;
+                        s.score++;
+                        speakWord(s.currentWord.en);
+                        const slotsEl = document.getElementById('bw-slots');
+                        if (slotsEl) slotsEl.classList.add('correct');
+                        setTimeout(() => {
+                            s.index++;
+                            renderBuildWordQuestion();
+                        }, 900);
+                    }
+                }
+            });
+        }
+    }
 }
 
 function placeLetter(letterId) {
@@ -13681,6 +13830,23 @@ function renderPpQuestion() {
             handlePpAnswer(parseInt(btn.dataset.optIndex, 10));
         });
     });
+
+    // === Голосовой ввод: принимаем и предлог, и полный глагол ===
+    if (voiceAvailable()) {
+        const ppContainer = container.querySelector('.pp-container');
+        if (ppContainer) {
+            attachVoiceButton(ppContainer, {
+                lang: 'en-GB',
+                validAnswers: [correctPrep, current.en],
+                onMatch: () => {
+                    if (s.answered) return;
+                    const correctIdx = options.findIndex(o => o.correct);
+                    const b = document.querySelector(`.pp-option[data-opt-index="${correctIdx}"]`);
+                    if (b) b.click();
+                }
+            });
+        }
+    }
 }
 
 function handlePpAnswer(optIndex) {
@@ -14009,14 +14175,30 @@ function renderCtQuestion() {
             </div>
         </div>
     `;
-
     container.querySelectorAll('.ct-option').forEach(btn => {
         btn.addEventListener('click', () => {
             handleCtAnswer(parseInt(btn.dataset.optIndex, 10));
         });
     });
-}
 
+    // === Голосовой ввод ===
+    if (voiceAvailable()) {
+        const ctContainer = container.querySelector('.ct-container');
+        if (ctContainer) {
+            const isRuPrompt = s.mode === 'ru-prompt';
+            attachVoiceButton(ctContainer, {
+                lang: isRuPrompt ? 'en-GB' : 'ru-RU',
+                validAnswers: [isRuPrompt ? current.en : current.ru],
+                onMatch: () => {
+                    if (s.answered) return;
+                    const correctIdx = s.currentOptions.findIndex(o => o.isCorrect);
+                    const b = document.querySelector(`.ct-option[data-opt-index="${correctIdx}"]`);
+                    if (b) b.click();
+                }
+            });
+        }
+    }
+}
 function handleCtAnswer(optIndex) {
     const s = ctState;
     if (!s || s.answered) return;
@@ -14943,6 +15125,7 @@ function renderShapesQuestion() {
                 s.queue.shift(); // Убираем вопрос из очереди
                 setTimeout(() => { s.answered = false; renderShapesQuestion(); }, 850);
             } else {
+                            } else {
                 item.isRepeat = true; // Запоминаем, что была ошибка
                 speakWord(correctAnswer); // При ошибке всегда озвучиваем правильный ответ
                 
@@ -14955,6 +15138,23 @@ function renderShapesQuestion() {
             }
         });
     });
+
+    // === Голосовой ввод: только уровни 2 и 4 (ответ — название) ===
+    if (voiceAvailable() && (s.level === 2 || s.level === 4)) {
+        const sc = document.querySelector('.sg-container');
+        if (sc) {
+            attachVoiceButton(sc, {
+                lang: 'en-GB',
+                validAnswers: SHAPES_L1_DATA.map(x => x.en),
+                onMatch: () => {
+                    if (s.answered) return;
+                    const idx = options.indexOf(correctAnswer);
+                    const b = document.querySelector(`[data-opt="${idx}"]`);
+                    if (b) b.click();
+                }
+            });
+        }
+    }
 }
 
 // --- Финал раунда ---
@@ -15258,7 +15458,7 @@ function renderColorsQuestion() {
                 if (s.level !== 1) speakWord(correctAnswer);
                 s.queue.shift();
                 setTimeout(() => { s.answered = false; renderColorsQuestion(); }, 900);
-            } else {
+              } else {
                 item.isRepeat = true;
                 speakWord(correctAnswer);
                 setTimeout(() => {
@@ -15270,6 +15470,23 @@ function renderColorsQuestion() {
             }
         });
     });
+
+    // === Голосовой ввод: только уровень 3 (Назови цвет) ===
+    if (voiceAvailable() && s.level === 3) {
+        const sc = document.querySelector('.sg-container');
+        if (sc) {
+            attachVoiceButton(sc, {
+                lang: 'en-GB',
+                validAnswers: COLORS_DATA.map(c => c.en),
+                onMatch: () => {
+                    if (s.answered) return;
+                    const idx = options.indexOf(correctAnswer);
+                    const b = document.querySelector(`[data-opt="${idx}"]`);
+                    if (b) b.click();
+                }
+            });
+        }
+    }
 }
 
 function finishColorsLevel() {
@@ -15412,6 +15629,192 @@ document.addEventListener('scroll', hideTooltip, true);
 
     updateBtn();
 })();
+// ============================================================
+// ГОЛОСОВОЙ ВВОД (Web Speech API)
+// ============================================================
+const VOICE_KEY = 'goodStart_voiceEnabled';
+
+const voiceSupport = {
+    supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
+    secure: (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+};
+
+function loadVoiceEnabled() {
+    const raw = localStorage.getItem(VOICE_KEY);
+    return raw === null ? true : raw === '1';
+}
+function saveVoiceEnabled(v) { localStorage.setItem(VOICE_KEY, v ? '1' : '0'); }
+let voiceEnabled = loadVoiceEnabled();
+
+function voiceAvailable() {
+    return voiceEnabled && voiceSupport.supported && voiceSupport.secure;
+}
+
+function normalizeVoiceText(text) {
+    return String(text || '').toLowerCase().replace(/[.,!?;:'"«»…]/g, '').replace(/\s+/g, ' ').trim().replace(/^(a|an|the)\s+/i, '').replace(/\s+(a|an|the)$/i, '');
+}
+
+function voiceMatch(transcript, validAnswers) {
+    const norm = normalizeVoiceText(transcript);
+    if (!norm) return false;
+    return validAnswers.some(ans => normalizeVoiceText(ans) === norm);
+}
+
+function showVoiceToast(message, isError) {
+    const existing = document.getElementById('voice-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'voice-toast';
+    toast.className = 'voice-toast' + (isError ? ' error' : '');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.remove(); }, 2500);
+}
+
+let activeVoiceSession = null;
+
+function attachVoiceButton(container, opts) {
+    if (!voiceAvailable() || !container) return null;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'voice-btn-wrap';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'voice-btn';
+    btn.innerHTML = '<span class="voice-icon">🎤</span><span class="voice-label">Держи и говори</span>';
+    wrap.appendChild(btn);
+    container.appendChild(wrap);
+
+    const session = { active: false, btn, recognizer: null, startTime: 0, onUp: null };
+
+    function finishPress() {
+        if (!session.active) return;
+        const elapsed = Date.now() - session.startTime;
+        session.active = false;
+        if (session.onUp) {
+            document.removeEventListener('mouseup', session.onUp);
+            document.removeEventListener('touchend', session.onUp);
+            session.onUp = null;
+        }
+        if (activeVoiceSession === session) activeVoiceSession = null;
+
+        if (elapsed < 300) {
+            try { session.recognizer && session.recognizer.abort(); } catch (e) {}
+            btn.classList.remove('listening');
+            btn.querySelector('.voice-label').textContent = 'Держи и говори';
+            return;
+        }
+        try { session.recognizer && session.recognizer.stop(); } catch (e) {}
+    }
+
+    function startPress(e) {
+        if (e) e.preventDefault();
+        if (!voiceSupport.supported || !voiceSupport.secure) return;
+        if (!voiceEnabled) { showVoiceToast('Голосовой ввод отключён', false); return; }
+        if (session.active) return;
+
+        if (activeVoiceSession && activeVoiceSession !== session) {
+            try { activeVoiceSession.recognizer && activeVoiceSession.recognizer.abort(); } catch (err) {}
+        }
+        activeVoiceSession = session;
+
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRec) return;
+
+        const rec = new SpeechRec();
+        rec.lang = opts.lang || 'en-GB';
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.maxAlternatives = 3;
+
+        rec.onresult = (event) => {
+            const alternatives = [];
+            for (let i = 0; i < event.results[0].length; i++) {
+                alternatives.push(event.results[0][i].transcript);
+            }
+            const matched = alternatives.find(alt => voiceMatch(alt, opts.validAnswers || []));
+            if (matched) {
+                btn.classList.add('success');
+                if (opts.onMatch) opts.onMatch(matched);
+            } else {
+                btn.classList.add('no-match');
+                setTimeout(() => btn.classList.remove('no-match'), 800);
+                if (opts.onNoMatch) opts.onNoMatch(alternatives[0] || '');
+                else showVoiceToast('Не расслышал, попробуй ещё раз');
+            }
+        };
+
+        rec.onerror = (event) => {
+            const err = event.error;
+            if (err === 'no-speech' || err === 'aborted') {
+                if (err === 'no-speech') {
+                    if (opts.onNoMatch) opts.onNoMatch('');
+                    else showVoiceToast('Не расслышал, попробуй ещё раз');
+                }
+            } else if (err === 'not-allowed' || err === 'service-not-allowed') {
+                showVoiceToast('Разреши микрофон в настройках браузера', true);
+            } else if (opts.onError) {
+                opts.onError(err);
+            } else {
+                showVoiceToast('Ошибка распознавания', true);
+            }
+        };
+
+        rec.onend = () => {
+            session.active = false;
+            btn.classList.remove('listening');
+            btn.querySelector('.voice-label').textContent = 'Держи и говори';
+            setTimeout(() => btn.classList.remove('success'), 500);
+            if (session.onUp) {
+                document.removeEventListener('mouseup', session.onUp);
+                document.removeEventListener('touchend', session.onUp);
+                session.onUp = null;
+            }
+            if (activeVoiceSession === session) activeVoiceSession = null;
+        };
+
+        try { rec.start(); } catch (err) { session.active = false; showVoiceToast('Не удалось запустить микрофон', true); return; }
+
+        session.recognizer = rec;
+        session.active = true;
+        session.startTime = Date.now();
+        btn.classList.add('listening');
+        btn.querySelector('.voice-label').textContent = 'Слушаю...';
+
+        session.onUp = function() { finishPress(); };
+        document.addEventListener('mouseup', session.onUp);
+        document.addEventListener('touchend', session.onUp);
+    }
+
+    btn.addEventListener('mousedown', startPress);
+    btn.addEventListener('touchstart', startPress, { passive: false });
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    return btn;
+}
+
+(function initVoiceToggle() {
+    const btn = document.getElementById('voice-toggle');
+    if (!btn) return;
+    if (!voiceSupport.supported || !voiceSupport.secure) { btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+
+    function updateBtn() {
+        btn.textContent = voiceEnabled ? '🎤' : '🚫';
+        btn.classList.toggle('muted', !voiceEnabled);
+        btn.title = voiceEnabled ? 'Голосовой ввод включён' : 'Голосовой ввод отключён';
+    }
+    updateBtn();
+
+    btn.addEventListener('click', () => {
+        voiceEnabled = !voiceEnabled;
+        saveVoiceEnabled(voiceEnabled);
+        updateBtn();
+        showVoiceToast(voiceEnabled ? '🎤 Голос включён' : '🔇 Голос отключён');
+    });
+})();
+
 // ============================================================
 // ДИАГНОСТИКА
 // ============================================================
