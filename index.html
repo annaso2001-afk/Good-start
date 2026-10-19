@@ -10767,7 +10767,7 @@ const adultsGames = [
     { id: 'build-word',         icon: '🔤', title: 'Собери слово',       desc: 'Составь слово из букв' },
     { id: 'wordsearch',         icon: '🔍', title: 'Филворд',            desc: 'Найди спрятанные слова' },
     { id: 'hangman',            icon: '🪢', title: 'Виселица',           desc: 'Угадай слово по буквам' },
-    { id: 'preposition',        icon: '🔗', title: 'Подставь предлог',   desc: 'Вставь правильный предлог' },
+    { id: 'preposition',        icon: '🔗', title: 'Фразовые глаголы',   desc: '4 уровня: предлоги, аудио, значения, контекст'},
     { id: 'clock', icon: '🕐', title: 'Часы', desc: 'Учимся называть время' }
 ];
 
@@ -10933,9 +10933,9 @@ function renderAdultsGameList() {
                 return;
             }
 
-            // «Подставь предлог» — только фразовые глаголы
+            // «Фразовые глаголы» — 4 уровня
             if (gameId === 'preposition') {
-                renderPrepositionGame();
+                renderPhrasalGame();
                 return;
             }
 
@@ -13733,314 +13733,858 @@ function renderBuildWordComplete() {
     });
 }
 // ============================================================
-// ИГРА: ПОДСТАВЬ ПРЕДЛОГ (работает только с фразовыми глаголами)
+// ИГРА: ФРАЗОВЫЕ ГЛАГОЛЫ (4 уровня)
 // ============================================================
-let ppState = null;
-
-// Список предлогов для вариантов
 const PREPOSITION_CHOICES = ['up', 'down', 'off', 'on', 'in', 'out', 'away', 'after', 'for', 'with', 'over', 'into', 'back', 'through', 'to'];
 
-function renderPrepositionGame() {
-    // Берём только фразовые глаголы
-    const phrasalVerbs = (wordsData.phrasal_verbs || []).filter(pv =>
-        pv.en && pv.en.split(' ').length >= 2
-    );
+// Предложения для уровня 4 (можно расширять/менять)
+const PHRASAL_SENTENCES = {
+    "look after":    "Can you ___ my cat while I'm on holiday?",
+    "look for":      "I need to ___ my keys. I can't find them anywhere.",
+    "look forward to":"I always ___ my summer holidays.",
+    "look out":      "___! There's a car coming!",
+    "look up":       "You can ___ this word in the dictionary.",
+    "put off":       "Don't ___ your homework until the last minute.",
+    "put on":        "___ your coat — it's cold outside.",
+    "put out":       "Firefighters ___ fires every day.",
+    "put up with":   "I can't ___ this noise anymore!",
+    "take off":      "___ your shoes before entering.",
+    "take after":    "She ___ her mother — they look identical.",
+    "take up":       "I want to ___ a new hobby.",
+    "take care of":  "Can you ___ my plants while I'm away?",
+    "take part in":  "I want to ___ the competition.",
+    "get up":        "I usually ___ at 7 a.m.",
+    "get over":      "It took him months to ___ the breakup.",
+    "get rid of":    "We need to ___ these old clothes.",
+    "get away with": "You can't ___ cheating on the test.",
+    "get in":        "Please ___ the car — we're leaving.",
+    "get off":       "You need to ___ at the next stop.",
+    "get on":        "Let's ___ the bus.",
+    "go on":         "Please ___ — I'm listening.",
+    "go out":        "Do you want to ___ tonight?",
+    "go off":        "The alarm ___ at 6 a.m. every day.",
+    "go through":    "I can't ___ this alone — I need help.",
+    "come across":   "You might ___ some problems at first.",
+    "come up with":  "Can you ___ a better idea?",
+    "come back":     "Please ___ home before dark.",
+    "come in":       "___ and sit down — the door is open.",
+    "come out":      "The new album ___ next week.",
+    "turn on":       "Can you ___ the lights, please?",
+    "turn off":      "Don't forget to ___ the TV before bed.",
+    "turn up":       "Please ___ the volume — I can't hear.",
+    "turn down":     "Could you ___ the music? It's too loud.",
+    "break down":    "Old cars often ___ on long trips.",
+    "break up":      "They decided to ___ after five years.",
+    "break into":    "Someone tried to ___ my house last night.",
+    "bring up":      "She decided to ___ the topic at dinner.",
+    "bring back":    "Please ___ my book when you finish.",
+    "call off":      "They had to ___ the match because of rain.",
+    "call back":     "I'll ___ you in five minutes.",
+    "carry on":      "Please ___ with your work.",
+    "carry out":     "Scientists ___ experiments every day.",
+    "check in":      "We need to ___ at the hotel by 3 p.m.",
+    "check out":     "You must ___ of the hotel before noon.",
+    "cheer up":      "___! Things will get better.",
+    "clean up":      "Let's ___ this mess before mum comes home.",
+    "cut down (on)": "You should ___ sugar in your diet.",
+    "cut off":       "Don't ___ the power — I'm working.",
+    "deal with":     "I'll ___ this problem tomorrow.",
+    "dress up":      "We need to ___ for the party.",
+    "drop off":      "Can you ___ the kids at school?",
+    "drop out":      "He decided to ___ of college.",
+    "eat out":       "Let's ___ tonight — I don't feel like cooking.",
+    "fall asleep":   "I always ___ on the sofa.",
+    "fall down":     "Be careful — don't ___ the stairs.",
+    "figure out":    "I can't ___ this puzzle.",
+    "fill in":       "Please ___ this form.",
+    "find out":      "We need to ___ the truth.",
+    "focus on":      "You should ___ your studies.",
+    "give back":     "Please ___ my pen when you're done.",
+    "give in":       "Don't ___ — keep trying!",
+    "give up":       "You should ___ smoking. It's bad for your health.",
+    "grow up":       "Kids ___ so fast.",
+    "hand in":       "Please ___ your homework tomorrow.",
+    "hang out":      "Let's ___ at the park.",
+    "hang up":       "Please don't ___ — I'm not finished.",
+    "hold on":       "___ a minute — I'll check.",
+    "hurry up":      "___ or we'll miss the train!",
+    "keep on":       "Just ___ trying — you'll get it.",
+    "knock down":    "They want to ___ this old building.",
+    "let down":      "Please don't ___ me — I need your help.",
+    "lie down":      "You look tired — ___ for a while.",
+    "make up":       "She likes to ___ stories for her kids.",
+    "make out":      "I can't ___ what he's saying.",
+    "move in":       "We're going to ___ next week.",
+    "move out":      "They ___ at the end of the month.",
+    "pass away":     "When did his grandfather ___?",
+    "pass out":      "Don't ___ in the heat.",
+    "pick up":       "Can you ___ some milk on your way home?",
+    "point out":     "I'd like to ___ a few problems.",
+    "pull over":     "The police asked him to ___.",
+    "run into":      "You might ___ him at the party.",
+    "set up":        "Can you ___ the table for dinner?",
+    "show up":       "Please ___ on time.",
+    "shut down":     "Please ___ the computer.",
+    "sit down":      "Please ___ — the doctor will see you soon.",
+    "sort out":      "I need to ___ this problem.",
+    "stand up":      "Please ___ when the judge enters.",
+    "stay up":       "Don't ___ too late.",
+    "throw away":    "Don't ___ these papers — I need them.",
+    "try on":        "Can I ___ these shoes?",
+    "try out":       "I want to ___ this new game.",
+    "wake up":       "I ___ at 6 every morning.",
+    "warm up":       "Please ___ before exercising.",
+    "wash up":       "Can you ___ the dishes?",
+    "watch out":     "___! The floor is wet!",
+    "work out":      "I ___ at the gym three times a week.",
+    "write down":    "Please ___ the address."
+};
 
-    if (phrasalVerbs.length < 4) {
+let phrasalState = null;
+
+const PHRASAL_LEVELS = [
+    { num: 1, title: 'Подставь предлог',                icon: '🔗', desc: 'Выбери правильный предлог' },
+    { num: 2, title: 'Аудирование',                     icon: '🎧', desc: 'Слушай и выбирай перевод' },
+    { num: 3, title: 'Один глагол — много предлогов',   icon: '🎯', desc: 'Сопоставь значения' },
+    { num: 4, title: 'Вставь в предложение',            icon: '📖', desc: 'Выбери подходящий глагол' }
+];
+const PHRASAL_QUESTIONS_PER_LEVEL = 10;
+const PHRASAL_PASS_RATIO = 0.7;
+
+// --- Общие стили для всех уровней (УВЕЛИЧЕН ШРИФТ) ---
+const PHRASAL_STYLES = `
+<style>
+    .pp-container { max-width: 680px; margin: 0 auto; }
+    .pp-prompt-card {
+        background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+        border: 4px solid #FFF; border-radius: 22px;
+        padding: 30px 20px; text-align: center;
+        box-shadow: 0 10px 25px rgba(79,168,216,0.25);
+        margin-bottom: 20px;
+        position: relative;
+    }
+    .pp-prompt-emoji { font-size: 4.5rem; line-height: 1; margin-bottom: 15px; filter: drop-shadow(2px 2px 6px rgba(0,0,0,0.15)); }
+    .pp-prompt-hint { font-size: 1.6rem; color: #E06A1E; font-weight: bold; margin-bottom: 15px; }
+    .pp-prompt-verb { font-size: 2.5rem; font-weight: bold; color: #2E7BAE; letter-spacing: 1px; }
+    .pp-blank { display:inline-block; min-width: 90px; border-bottom: 5px dashed #FF8C42;
+                color: #FF8C42; margin: 0 10px; vertical-align: middle; }
+    
+    .pp-options { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
+    @media (max-width: 500px) { .pp-options { grid-template-columns: 1fr; } }
+    .pp-option {
+        padding: 18px 16px; background: #FFF;
+        border: 4px solid #E0F2FC; border-radius: 18px;
+        font-family: inherit; font-size: 1.4rem; font-weight: bold;
+        color: #2E7BAE; cursor: pointer; text-align: center;
+        transition: all 0.2s; word-break: break-word;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    }
+    .pp-option:hover:not(:disabled) {
+        border-color: #7FC4E8; background: #E0F2FC; transform: translateY(-3px);
+        box-shadow: 0 8px 15px rgba(79,168,216,0.2);
+    }
+    .pp-option:disabled { cursor: default; }
+    .pp-option.correct {
+        background: linear-gradient(135deg, #A8E6A3 0%, #C8F0C4 100%);
+        border-color: #4CAF50; color: #1B5E20; transform: scale(1.03);
+    }
+    .pp-option.wrong {
+        background: linear-gradient(135deg, #FFB3B3 0%, #FFD0D0 100%);
+        border-color: #E53935; color: #B71C1C;
+        animation: p3shake 0.4s ease;
+    }
+    
+    .ph-actions-bar { display: flex; gap: 12px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
+    .ph-hint-btn {
+        padding: 14px 28px;
+        background: linear-gradient(135deg, #FF8C42 0%, #FFB073 100%);
+        color: #FFF; border: 4px solid #FFF; border-radius: 18px;
+        font-family: inherit; font-weight: bold; font-size: 1.2rem;
+        cursor: pointer; box-shadow: 0 6px 15px rgba(255,140,66,0.4);
+        transition: all 0.2s;
+    }
+    .ph-hint-btn:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(255,140,66,0.6); }
+    .ph-hint-btn:disabled { background: #B0B0B0; box-shadow: none; cursor: default; opacity: 0.6; }
+
+    /* Уровень 3 */
+    .p3-container { max-width: 680px; margin: 0 auto; }
+    .p3-base-verb {
+        font-size: 3.5rem; font-weight: bold; color: #2E7BAE;
+        text-align: center; letter-spacing: 6px;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 0 #FFF, 4px 4px 12px rgba(79,168,216,0.25);
+    }
+    .p3-instruction { text-align: center; color: #6A6A6A; font-size: 1.3rem; margin-bottom: 25px; }
+    .p3-rows { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
+    .p3-row {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 15px;
+        background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
+        border: 4px solid #FFF; border-radius: 18px;
+        padding: 15px 20px;
+        box-shadow: 0 6px 15px rgba(79,168,216,0.15);
+    }
+    .p3-translation { font-size: 1.4rem; color: #E06A1E; font-weight: bold; flex: 1; }
+    .p3-slot {
+        min-width: 110px; min-height: 50px;
+        padding: 8px 16px;
+        border: 4px dashed #7FC4E8; border-radius: 14px;
+        background: #FFF; font-family: inherit;
+        font-size: 1.3rem; font-weight: bold; color: #2E7BAE;
+        cursor: pointer; transition: all 0.2s;
+    }
+    .p3-slot.filled { background: linear-gradient(135deg, #FFE9B8 0%, #FFD6A8 100%); border-style: solid; border-color: #FF8C42; color: #E06A1E; }
+    .p3-slot.correct { background: linear-gradient(135deg, #A8E6A3 0%, #C8F0C4 100%); border-color: #4CAF50; color: #1B5E20; }
+    .p3-slot.wrong { background: linear-gradient(135deg, #FFB3B3 0%, #FFD0D0 100%); border-color: #E53935; color: #B71C1C; animation: p3shake 0.4s ease; }
+    @keyframes p3shake {
+        0%,100% { transform: translateX(0); }
+        25%     { transform: translateX(-6px); }
+        75%     { transform: translateX(6px); }
+    }
+    .p3-pool {
+        display: flex; flex-wrap: wrap; justify-content: center;
+        gap: 12px;
+        background: rgba(255,255,255,0.7);
+        padding: 18px; border-radius: 18px;
+    }
+    .p3-prep {
+        padding: 14px 26px;
+        border: 4px solid #FFF; border-radius: 16px;
+        background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
+        color: #FFF; font-family: inherit; font-weight: bold;
+        font-size: 1.3rem; cursor: pointer;
+        box-shadow: 0 4px 10px rgba(79,168,216,0.35);
+        transition: all 0.2s;
+    }
+    .p3-prep:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 8px 18px rgba(79,168,216,0.5); }
+    .p3-prep.selected { background: linear-gradient(135deg, #FF8C42 0%, #FFB073 100%); box-shadow: 0 0 0 5px #FFE9B8, 0 6px 15px rgba(255,140,66,0.5); transform: scale(1.08); }
+    .p3-prep.used { background: #E0E0E0; color: #B0B0B0; box-shadow: none; cursor: default; opacity: 0.5; }
+    
+    .p4-sentence {
+        font-size: 1.7rem; line-height: 1.6;
+        color: #2E7BAE; font-weight: bold;
+        margin: 15px 0;
+    }
+    .p4-blank { display: inline-block; min-width: 120px; border-bottom: 5px dashed #FF8C42; color: #FF8C42; margin: 0 8px; text-align: center; }
+</style>`;
+
+// --- Точка входа (вызывается из renderAdultsGameList) ---
+function renderPhrasalGame() {
+    startPhrasalLevel(1);
+}
+
+// --- Хелперы ---
+function getPhrasalVerbList() {
+    return (wordsData.phrasal_verbs || []).filter(pv =>
+        pv.en && pv.en.split(' ').length >= 2 && !pv.en.includes('/')
+    );
+}
+
+function getPhrasalGroups() {
+    const groups = {};
+    getPhrasalVerbList().forEach(pv => {
+        const parts = pv.en.split(' ');
+        const base = parts[0];
+        const rest = parts.slice(1).join(' ');
+        if (rest.includes(' ') || rest.includes('(') || rest.includes(')')) return;
+        if (!groups[base]) groups[base] = [];
+        groups[base].push({ ...pv, base, rest });
+    });
+    return Object.entries(groups)
+        .filter(([_, verbs]) => verbs.length >= 3)
+        .map(([base, verbs]) => ({ base, verbs }));
+}
+
+// --- Запуск уровня ---
+function startPhrasalLevel(levelNum) {
+    let setup = null;
+    if (levelNum === 1) setup = setupPhrasalL1();
+    else if (levelNum === 2) setup = setupPhrasalL2();
+    else if (levelNum === 3) setup = setupPhrasalL3();
+    else if (levelNum === 4) setup = setupPhrasalL4();
+
+    if (!setup || setup.queue.length === 0) {
         contentEl.innerHTML = `
             <div style="text-align:center;">
-                <button class="games-back-btn" id="back-to-adults-games">← К играм</button>
-            </div>
-            <div class="games-header">
-                <h2>🔗 Подставь предлог</h2>
-                <p>Недостаточно фразовых глаголов</p>
+                <button class="games-back-btn" id="ph-back-err">← К играм</button>
             </div>
             <div class="games-placeholder">
                 <span class="big-icon">😔</span>
-                <h2>Нет данных</h2>
-                <p>Добавьте фразовые глаголы в словарик.</p>
-            </div>
-        `;
-        document.getElementById('back-to-adults-games')
+                <h2>Недостаточно данных</h2>
+                <p>Для этого уровня не хватает фразовых глаголов.</p>
+            </div>`;
+        document.getElementById('ph-back-err')
             .addEventListener('click', renderAdultsGameList);
         return;
     }
 
-    const shuffled = [...phrasalVerbs].sort(() => Math.random() - 0.5);
-    const total = Math.min(shuffled.length, 10);
-
-    ppState = {
-        pool: shuffled.slice(0, total),
-        allPhrasalVerbs: phrasalVerbs,
-        total,
-        index: 0,
-        score: 0,
-        answered: false,
-        currentOptions: []
+    phrasalState = {
+        level: levelNum,
+        queue: setup.queue,
+        totalUnique: setup.queue.length,
+        correctFirstTry: 0,
+        answered: false
     };
-
-    contentEl.innerHTML = `
-        <div style="text-align:center;">
-            <button class="games-back-btn" id="back-to-adults-games">← К играм</button>
-        </div>
-        <div class="games-header">
-            <h2>🔗 Подставь предлог</h2>
-            <p>Выбери правильный предлог для фразового глагола</p>
-        </div>
-        <div id="pp-content"></div>
-
-        <style>
-            .pp-container { max-width: 620px; margin: 0 auto; }
-            .pp-progress {
-                text-align: center; color: #6A6A6A;
-                font-weight: bold; margin-bottom: 15px; font-size: 1rem;
-            }
-            .pp-score { color: #4CAF50; }
-            .pp-prompt-card {
-                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
-                border: 4px solid #FFF; border-radius: 22px;
-                padding: 30px 20px; text-align: center;
-                box-shadow: 0 10px 25px rgba(79,168,216,0.25);
-                margin-bottom: 22px;
-                animation: ppAppear 0.3s ease;
-            }
-            @keyframes ppAppear {
-                from { opacity: 0; transform: translateY(-8px); }
-                to   { opacity: 1; transform: translateY(0); }
-            }
-            .pp-prompt-emoji {
-                font-size: 3.2rem; line-height: 1;
-                margin-bottom: 12px;
-                filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15));
-            }
-            .pp-prompt-hint {
-                font-size: 1rem; color: #E06A1E;
-                font-weight: bold; margin-bottom: 12px;
-            }
-            .pp-prompt-verb {
-                font-size: 1.8rem; font-weight: bold;
-                color: #2E7BAE; word-break: break-word;
-            }
-            .pp-prompt-verb .pp-blank {
-                display: inline-block;
-                min-width: 70px;
-                border-bottom: 4px dashed #FF8C42;
-                color: #FF8C42;
-                margin: 0 8px;
-                vertical-align: middle;
-            }
-            .pp-options {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 12px;
-            }
-            @media (max-width: 500px) { .pp-options { grid-template-columns: 1fr; } }
-            .pp-option {
-                padding: 16px 14px;
-                background: #FFF;
-                border: 3px solid #E0F2FC;
-                border-radius: 15px;
-                font-family: inherit;
-                font-size: 1.1rem;
-                font-weight: bold;
-                color: #2E7BAE;
-                cursor: pointer;
-                text-align: center;
-                transition: all 0.2s;
-                word-break: break-word;
-            }
-            .pp-option:hover:not(:disabled) {
-                border-color: #7FC4E8;
-                background: #E0F2FC;
-                transform: translateY(-3px);
-            }
-            .pp-option:disabled { cursor: default; }
-            .pp-option.correct {
-                background: linear-gradient(135deg, #A8E6A3 0%, #C8F0C4 100%);
-                border-color: #4CAF50; color: #1B5E20;
-                transform: scale(1.04);
-            }
-            .pp-option.wrong {
-                background: linear-gradient(135deg, #FFB3B3 0%, #FFD0D0 100%);
-                border-color: #E53935; color: #B71C1C;
-            }
-            .pp-complete {
-                text-align: center; padding: 30px 20px;
-                background: linear-gradient(135deg, #FFFFFF 0%, #E8F6FE 100%);
-                border: 4px solid #FFF; border-radius: 25px;
-                box-shadow: 0 10px 25px rgba(79,168,216,0.25);
-            }
-            .pp-complete .pp-big { font-size: 4rem; line-height: 1; margin-bottom: 10px; }
-            .pp-complete h2 { color: #2E7BAE; margin-bottom: 10px; font-size: 1.5rem; }
-            .pp-complete .pp-score-big {
-                font-size: 1.6rem; color: #E06A1E;
-                font-weight: bold; margin-bottom: 22px;
-            }
-        </style>
-    `;
-
-    document.getElementById('back-to-adults-games')
-        .addEventListener('click', renderAdultsGameList);
-
-    renderPpQuestion();
+    renderPhrasalQuestion();
 }
 
-function renderPpQuestion() {
-    const s = ppState;
-    const container = document.getElementById('pp-content');
-    if (!container || !s) return;
+function setupPhrasalL1() {
+    const pvs = getPhrasalVerbList();
+    if (pvs.length < 4) return null;
+    const sel = sgShuffle(pvs).slice(0, Math.min(PHRASAL_QUESTIONS_PER_LEVEL, pvs.length));
+    return { queue: sel.map(pv => ({ ...pv, isRepeat: false })) };
+}
+function setupPhrasalL2() {
+    const pvs = getPhrasalVerbList();
+    if (pvs.length < 4) return null;
+    const sel = sgShuffle(pvs).slice(0, Math.min(PHRASAL_QUESTIONS_PER_LEVEL, pvs.length));
+    return { queue: sel.map(pv => ({ ...pv, isRepeat: false })) };
+}
+function setupPhrasalL3() {
+    const groups = getPhrasalGroups();
+    if (groups.length < 1) return null;
+    const sel = sgShuffle(groups).slice(0, Math.min(8, groups.length));
+    return { queue: sel.map(g => ({ ...g, isRepeat: false })) };
+}
+function setupPhrasalL4() {
+    const pvs = getPhrasalVerbList().filter(pv =>
+        PHRASAL_SENTENCES[pv.en] &&
+        !pv.en.includes('(') && !pv.en.includes('/')
+    );
+    if (pvs.length < 4) return null;
+    const sel = sgShuffle(pvs).slice(0, Math.min(PHRASAL_QUESTIONS_PER_LEVEL, pvs.length));
+    return { queue: sel.map(pv => ({ ...pv, isRepeat: false })) };
+}
 
-    if (s.index >= s.total) {
-        renderPpComplete();
-        return;
-    }
-
-    const current = s.pool[s.index];
-    // Разбиваем фразовый глагол на глагол + предлог (или несколько предлогов)
-    // Например: "look after" → verb = "look", prep = "after"
-    //           "put up with" → verb = "put", prep = "up with"
-    const parts = current.en.split(' ');
-    const verb = parts[0];
-    const prep = parts.slice(1).join(' ');
-
-    // Собираем варианты ответа
-    const correctPrep = prep;
-
-    // Берём правильный + 3 неправильных из PREPOSITION_CHOICES
-    const wrongPool = PREPOSITION_CHOICES.filter(p => p.toLowerCase() !== correctPrep.toLowerCase());
-    const shuffledWrong = [...wrongPool].sort(() => Math.random() - 0.5);
-    const wrongOptions = shuffledWrong.slice(0, 3);
-
-    const options = [
-        { text: correctPrep, correct: true },
-        ...wrongOptions.map(w => ({ text: w, correct: false }))
-    ].sort(() => Math.random() - 0.5);
-
-    s.currentOptions = options;
+// --- Диспетчер ---
+function renderPhrasalQuestion() {
+    const s = phrasalState;
+    if (!s) return;
+    if (s.queue.length === 0) { finishPhrasalLevel(); return; }
     s.answered = false;
 
-    // Показываем глагол + подсказку
-    const displayVerb = verb + ' ';
+    if (s.level === 1) renderPhrasalL1();
+    else if (s.level === 2) renderPhrasalL2();
+    else if (s.level === 3) renderPhrasalL3();
+    else if (s.level === 4) renderPhrasalL4();
+}
 
-    container.innerHTML = `
-        <div class="pp-container">
-            <div class="pp-progress">
-                Вопрос ${s.index + 1} из ${s.total}
-                · <span class="pp-score">✓ ${s.score}</span>
-            </div>
-
-            <div class="pp-prompt-card">
-                <div class="pp-prompt-emoji">${current.emoji || '🔗'}</div>
-                <div class="pp-prompt-hint">${current.ru}</div>
-                <div class="pp-prompt-verb">
-                    ${displayVerb}
-                    <span class="pp-blank">?</span>
-                </div>
-            </div>
-
-            <div class="pp-options">
-                ${options.map((opt, i) => `
-                    <button class="pp-option" data-opt-index="${i}">${opt.text}</button>
-                `).join('')}
-            </div>
+// --- Общие куски для хедера и кнопки «назад» ---
+function phrasalHeaderHtml(levelTitle) {
+    const s = phrasalState;
+    const mastered = s.totalUnique - s.queue.length;
+    return `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="ph-back">← К играм</button>
         </div>
-    `;
+        <div class="games-header">
+            <h2>🔗 Уровень ${s.level} · ${levelTitle}</h2>
+            <p>Освоено: ${mastered} из ${s.totalUnique} · ✓ ${s.correctFirstTry}</p>
+        </div>`;
+}
+function attachPhrasalBackBtn() {
+    const btn = document.getElementById('ph-back');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        if (phrasalState && phrasalState.correctFirstTry > 0) {
+            if (!confirm('Выйти из игры? Прогресс раунда не сохранится.')) return;
+        }
+        phrasalState = null;
+        renderAdultsGameList();
+    });
+}
 
-    container.querySelectorAll('.pp-option').forEach(btn => {
-        btn.addEventListener('click', () => {
-            handlePpAnswer(parseInt(btn.dataset.optIndex, 10));
+// Универсальная привязка подсказки 50/50
+function attachHint5050(correct, options) {
+    const hintBtn = document.getElementById('ph-hint-btn');
+    if (!hintBtn) return;
+    hintBtn.addEventListener('click', function() {
+        this.disabled = true;
+        const wrongBtns = Array.from(document.querySelectorAll('.pp-option')).filter((b, i) => options[i] !== correct && !b.disabled);
+        sgShuffle(wrongBtns).slice(0, 2).forEach(b => {
+            b.disabled = true;
+            b.style.opacity = '0.3';
+            b.style.textDecoration = 'line-through';
         });
     });
+}
 
-    // === Голосовой ввод: принимаем и предлог, и полный глагол ===
+// --- УРОВЕНЬ 1: Подставь предлог ---
+function renderPhrasalL1() {
+    const s = phrasalState;
+    const item = s.queue[0];
+    const parts = item.en.split(' ');
+    const base = parts[0];
+    const prep = parts.slice(1).join(' ');
+    const correct = prep;
+
+    const wrongs = sgShuffle(PREPOSITION_CHOICES.filter(p => p !== prep.toLowerCase())).slice(0, 3);
+    const options = sgShuffle([correct, ...wrongs]);
+    s.currentOptions = options;
+
+    contentEl.innerHTML = `
+        ${phrasalHeaderHtml('Подставь предлог')}
+        <div class="pp-container">
+            <div class="pp-prompt-card">
+                <div class="pp-prompt-emoji">${item.emoji || '🔗'}</div>
+                <div class="pp-prompt-hint">${item.ru}</div>
+                <div class="pp-prompt-verb">${base} <span class="pp-blank">?</span></div>
+            </div>
+            <div class="pp-options">
+                ${options.map((opt, i) => `<button class="pp-option" data-opt="${i}">${opt}</button>`).join('')}
+            </div>
+            <div class="ph-actions-bar">
+                <button id="ph-hint-btn" class="ph-hint-btn">💡 Подсказка (50/50)</button>
+            </div>
+        </div>
+        ${PHRASAL_STYLES}`;
+
+    attachPhrasalBackBtn();
+    attachHint5050(correct, options);
+
     if (voiceAvailable()) {
-        const ppContainer = container.querySelector('.pp-container');
-        if (ppContainer) {
-            attachVoiceButton(ppContainer, {
+        const container = document.querySelector('.pp-container');
+        if (container) {
+            attachVoiceButton(container, {
                 lang: 'en-GB',
-                validAnswers: [correctPrep, current.en],
+                validAnswers: [item.en, prep],
                 onMatch: () => {
                     if (s.answered) return;
-                    const correctIdx = options.findIndex(o => o.correct);
-                    const b = document.querySelector(`.pp-option[data-opt-index="${correctIdx}"]`);
+                    const correctIdx = options.indexOf(correct);
+                    const b = document.querySelector(`.pp-option[data-opt="${correctIdx}"]`);
                     if (b) b.click();
                 }
             });
         }
     }
-}
 
-function handlePpAnswer(optIndex) {
-    const s = ppState;
-    if (!s || s.answered) return;
-    s.answered = true;
+    document.querySelectorAll('.pp-option').forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+            if (s.answered) return;
+            s.answered = true;
+            const isCorrect = options[i] === correct;
 
-    const selected = s.currentOptions[optIndex];
-    const buttons = document.querySelectorAll('.pp-option');
+            document.querySelectorAll('.pp-option').forEach((b, j) => {
+                b.disabled = true;
+                if (options[j] === correct) b.classList.add('correct');
+                else if (j === i) b.classList.add('wrong');
+            });
 
-    buttons.forEach((btn, i) => {
-        btn.disabled = true;
-        if (s.currentOptions[i].correct) btn.classList.add('correct');
-        else if (i === optIndex) btn.classList.add('wrong');
+            if (isCorrect) {
+                if (!item.isRepeat) s.correctFirstTry++;
+                speakWord(item.en);
+                s.queue.shift();
+                setTimeout(renderPhrasalQuestion, 900);
+            } else {
+                item.isRepeat = true;
+                speakWord(item.en);
+                setTimeout(() => {
+                    s.queue.shift(); s.queue.push(item);
+                    renderPhrasalQuestion();
+                }, 1400);
+            }
+        });
     });
-
-    const currentWord = s.pool[s.index];
-
-    if (selected.correct) {
-        s.score++;
-        if (currentWord && currentWord.en) speakWord(currentWord.en);
-    }
-
-    setTimeout(() => {
-        s.index++;
-        renderPpQuestion();
-    }, selected.correct ? 900 : 1500);
 }
 
-function renderPpComplete() {
-    const s = ppState;
-    const container = document.getElementById('pp-content');
-    if (!container || !s) return;
+// --- УРОВЕНЬ 2: Аудирование ---
+function renderPhrasalL2() {
+    const s = phrasalState;
+    const item = s.queue[0];
+    const correct = item.ru;
 
-    const percent = Math.round((s.score / s.total) * 100);
-    let emoji = '😔';
-    let message = 'Попробуй ещё раз!';
-    if (percent >= 90)      { emoji = '🏆'; message = 'Превосходно!'; }
-    else if (percent >= 70) { emoji = '🎉'; message = 'Отличная работа!'; }
-    else if (percent >= 50) { emoji = '👍'; message = 'Неплохо!'; }
-    else if (percent >= 30) { emoji = '💪'; message = 'Продолжай тренироваться!'; }
+    const allRu = getPhrasalVerbList().map(pv => pv.ru);
+    const wrongs = [];
+    sgShuffle(allRu).forEach(r => {
+        if (wrongs.length >= 3) return;
+        if (r !== correct && !wrongs.includes(r)) wrongs.push(r);
+    });
+    const options = sgShuffle([correct, ...wrongs]);
+    s.currentOptions = options;
 
-    container.innerHTML = `
+    contentEl.innerHTML = `
+        ${phrasalHeaderHtml('Аудирование')}
         <div class="pp-container">
-            <div class="pp-complete">
-                <div class="pp-big">${emoji}</div>
-                <h2>${message}</h2>
-                <div class="pp-score-big">${s.score} / ${s.total} &nbsp;·&nbsp; ${percent}%</div>
-                <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-                    <button id="pp-restart" style="
-                        padding: 12px 22px;
-                        background: linear-gradient(135deg, #4FA8D8 0%, #7FC4E8 100%);
-                        color: #FFF; border: 3px solid #FFF; border-radius: 18px;
-                        font-family: inherit; font-weight: bold; font-size: 0.95rem;
-                        cursor: pointer;
-                        box-shadow: 0 5px 15px rgba(79,168,216,0.3);
-                    ">🔄 Ещё раз</button>
-                    <button id="pp-back" style="
-                        padding: 12px 22px;
-                        background: linear-gradient(135deg, #B0B0B0 0%, #C8C8C8 100%);
-                        color: #FFF; border: 3px solid #FFF; border-radius: 18px;
-                        font-family: inherit; font-weight: bold; font-size: 0.95rem;
-                        cursor: pointer;
-                        box-shadow: 0 5px 15px rgba(150,150,150,0.3);
-                    ">← К играм</button>
+            <div class="pp-prompt-card">
+                <div class="pp-prompt-emoji">🎧</div>
+                <div class="pp-prompt-hint">Слушай и выбирай перевод</div>
+                <div class="ph-actions-bar" style="margin-top:10px;">
+                    <button class="sg-play-btn" id="ph-play" style="margin:0; padding:14px 28px; font-size:1.2rem;">🔊 Прослушать</button>
+                    <button id="ph-hint-btn" class="ph-hint-btn">💡 Подсказка (50/50)</button>
                 </div>
             </div>
+            <div class="pp-options" style="grid-template-columns:1fr;">
+                ${options.map((opt, i) => `<button class="pp-option" data-opt="${i}">${opt}</button>`).join('')}
+            </div>
         </div>
-    `;
+        ${PHRASAL_STYLES}`;
 
-    document.getElementById('pp-restart').addEventListener('click', renderPrepositionGame);
-    document.getElementById('pp-back').addEventListener('click', renderAdultsGameList);
+    attachPhrasalBackBtn();
+    attachHint5050(correct, options);
+
+    const playFn = () => speakWord(item.en);
+    setTimeout(playFn, 300);
+    document.getElementById('ph-play').addEventListener('click', playFn);
+
+    if (voiceAvailable()) {
+        const container = document.querySelector('.pp-container');
+        if (container) {
+            attachVoiceButton(container, {
+                lang: 'en-GB',
+                validAnswers: [item.en],
+                onMatch: () => {
+                    if (s.answered) return;
+                    const correctIdx = options.indexOf(correct);
+                    const b = document.querySelector(`.pp-option[data-opt="${correctIdx}"]`);
+                    if (b) b.click();
+                }
+            });
+        }
+    }
+
+    document.querySelectorAll('.pp-option').forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+            if (s.answered) return;
+            s.answered = true;
+            const isCorrect = options[i] === correct;
+
+            document.querySelectorAll('.pp-option').forEach((b, j) => {
+                b.disabled = true;
+                if (options[j] === correct) b.classList.add('correct');
+                else if (j === i) b.classList.add('wrong');
+            });
+
+            if (isCorrect) {
+                if (!item.isRepeat) s.correctFirstTry++;
+                s.queue.shift();
+                setTimeout(renderPhrasalQuestion, 900);
+            } else {
+                item.isRepeat = true;
+                speakWord(item.en);
+                setTimeout(() => {
+                    s.queue.shift(); s.queue.push(item);
+                    renderPhrasalQuestion();
+                }, 1400);
+            }
+        });
+    });
 }
+
+// --- УРОВЕНЬ 3: Один глагол — много предлогов ---
+function renderPhrasalL3() {
+    const s = phrasalState;
+    const group = s.queue[0];
+    const verbs = group.verbs.slice(0, Math.min(4, group.verbs.length));
+
+    const seenPreps = new Set();
+    const uniqueVerbs = [];
+    for (const v of verbs) {
+        if (seenPreps.has(v.rest)) continue;
+        seenPreps.add(v.rest);
+        uniqueVerbs.push(v);
+    }
+
+    const translations = sgShuffle(uniqueVerbs);
+    const preps = sgShuffle(uniqueVerbs.map(v => v.rest));
+
+    s.l3 = {
+        group,
+        translations,
+        preps,
+        slots: new Array(translations.length).fill(null),
+        selectedPrep: null,
+        isRepeat: group.isRepeat,
+        done: false
+    };
+
+    contentEl.innerHTML = `
+        ${phrasalHeaderHtml('Один глагол — много предлогов')}
+        <div class="p3-container">
+            <div class="p3-base-verb">${group.base.toUpperCase()}</div>
+            <p class="p3-instruction">Собери фразовые глаголы — к каждому переводу подбери предлог</p>
+            <div class="p3-rows" id="p3-rows">
+                ${translations.map((v, i) => `
+                    <div class="p3-row" data-row="${i}">
+                        <span class="p3-translation">${v.ru}</span>
+                        <button class="p3-slot" data-slot="${i}">?</button>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="p3-pool" id="p3-pool">
+                ${preps.map((p, i) => `<button class="p3-prep" data-prep="${p}">${p}</button>`).join('')}
+            </div>
+            <div class="ph-actions-bar">
+                <button id="ph-hint-btn" class="ph-hint-btn">💡 Подсказка (1 предлог)</button>
+            </div>
+        </div>
+        ${PHRASAL_STYLES}`;
+
+    attachPhrasalBackBtn();
+    const s3 = s.l3;
+
+    function updateUI() {
+        document.querySelectorAll('.p3-slot').forEach((slot, i) => {
+            const val = s3.slots[i];
+            slot.textContent = val === null ? '?' : val;
+            slot.classList.toggle('filled', val !== null);
+        });
+        document.querySelectorAll('.p3-prep').forEach(btn => {
+            const prep = btn.dataset.prep;
+            const used = s3.slots.includes(prep);
+            btn.classList.toggle('used', used);
+            btn.classList.toggle('selected', s3.selectedPrep === prep);
+            btn.disabled = used;
+        });
+    }
+
+    // ПОДСКАЗКА ДЛЯ УРОВНЯ 3 (автоматически вставляет 1 правильный предлог)
+    document.getElementById('ph-hint-btn').addEventListener('click', function() {
+        this.disabled = true;
+        if (s3.done) return;
+        
+        const emptyIdxs = s3.slots.map((v, i) => v === null ? i : -1).filter(i => i !== -1);
+        if (emptyIdxs.length === 0) return;
+        
+        const idx = emptyIdxs[Math.floor(Math.random() * emptyIdxs.length)];
+        const correctPrep = s3.translations[idx].rest;
+        
+        // Если этот предлог уже стоит в другом слоте, убираем его оттуда
+        const existingIdx = s3.slots.indexOf(correctPrep);
+        if (existingIdx !== -1) s3.slots[existingIdx] = null;
+        
+        s3.slots[idx] = correctPrep;
+        s3.selectedPrep = null;
+        updateUI();
+        
+        if (s3.slots.every(v => v !== null)) checkAll();
+    });
+
+    document.querySelectorAll('.p3-prep').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.disabled || s3.done) return;
+            s3.selectedPrep = btn.dataset.prep;
+            updateUI();
+        });
+    });
+
+    document.querySelectorAll('.p3-slot').forEach(slot => {
+        slot.addEventListener('click', () => {
+            if (s3.done) return;
+            const idx = parseInt(slot.dataset.slot, 10);
+            if (s3.slots[idx] !== null) {
+                s3.slots[idx] = null;
+                updateUI();
+                return;
+            }
+            if (s3.selectedPrep) {
+                s3.slots[idx] = s3.selectedPrep;
+                s3.selectedPrep = null;
+                updateUI();
+                if (s3.slots.every(v => v !== null)) checkAll();
+            }
+        });
+    });
+
+    function checkAll() {
+        s3.done = true;
+        let allCorrect = true;
+        s3.translations.forEach((v, i) => {
+            const ok = s3.slots[i] === v.rest;
+            const slot = document.querySelector(`.p3-slot[data-slot="${i}"]`);
+            if (slot) slot.classList.add(ok ? 'correct' : 'wrong');
+            if (!ok) allCorrect = false;
+        });
+
+        if (allCorrect) {
+            if (!s3.isRepeat) s.correctFirstTry++;
+            setTimeout(() => {
+                s.queue.shift();
+                renderPhrasalQuestion();
+            }, 1000);
+        } else {
+            s3.group.isRepeat = true;
+            setTimeout(() => {
+                s3.done = false;
+                s3.slots = new Array(s3.translations.length).fill(null);
+                document.querySelectorAll('.p3-slot').forEach(el => {
+                    el.classList.remove('correct','wrong','filled');
+                    el.textContent = '?';
+                });
+                updateUI();
+            }, 1800);
+        }
+    }
+
+    updateUI();
+}
+
+// --- УРОВЕНЬ 4: Вставь в предложение ---
+function renderPhrasalL4() {
+    const s = phrasalState;
+    const item = s.queue[0];
+    const correct = item.en;
+    const sentence = PHRASAL_SENTENCES[item.en];
+
+    const baseVerb = item.en.split(' ')[0];
+    const sameBase = getPhrasalVerbList().filter(pv =>
+        pv.en !== correct && pv.en.split(' ')[0] === baseVerb && PHRASAL_SENTENCES[pv.en]
+    );
+    const others = getPhrasalVerbList().filter(pv =>
+        pv.en !== correct && pv.en.split(' ')[0] !== baseVerb && PHRASAL_SENTENCES[pv.en]
+    );
+
+    const wrongs = [];
+    sgShuffle(sameBase).forEach(pv => { if (wrongs.length < 2) wrongs.push(pv.en); });
+    sgShuffle(others).forEach(pv => { if (wrongs.length < 3) wrongs.push(pv.en); });
+
+    const options = sgShuffle([correct, ...wrongs.slice(0, 3)]);
+    s.currentOptions = options;
+
+    contentEl.innerHTML = `
+        ${phrasalHeaderHtml('Вставь в предложение')}
+        <div class="pp-container">
+            <div class="pp-prompt-card">
+                <div class="pp-prompt-emoji">${item.emoji || '📖'}</div>
+                <div class="p4-sentence">${sentence.replace('___', '<span class="p4-blank">?</span>')}</div>
+                <div class="pp-prompt-hint" style="margin-top:10px;">${item.ru}</div>
+            </div>
+            <div class="pp-options" style="grid-template-columns:1fr;">
+                ${options.map((opt, i) => `<button class="pp-option" data-opt="${i}">${opt}</button>`).join('')}
+            </div>
+            <div class="ph-actions-bar">
+                <button id="ph-hint-btn" class="ph-hint-btn">💡 Подсказка (50/50)</button>
+            </div>
+        </div>
+        ${PHRASAL_STYLES}`;
+
+    attachPhrasalBackBtn();
+    attachHint5050(correct, options);
+
+    if (voiceAvailable()) {
+        const container = document.querySelector('.pp-container');
+        if (container) {
+            attachVoiceButton(container, {
+                lang: 'en-GB',
+                validAnswers: [correct],
+                onMatch: () => {
+                    if (s.answered) return;
+                    const correctIdx = options.indexOf(correct);
+                    const b = document.querySelector(`.pp-option[data-opt="${correctIdx}"]`);
+                    if (b) b.click();
+                }
+            });
+        }
+    }
+
+    document.querySelectorAll('.pp-option').forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+            if (s.answered) return;
+            s.answered = true;
+            const isCorrect = options[i] === correct;
+
+            document.querySelectorAll('.pp-option').forEach((b, j) => {
+                b.disabled = true;
+                if (options[j] === correct) b.classList.add('correct');
+                else if (j === i) b.classList.add('wrong');
+            });
+
+            if (isCorrect) {
+                if (!item.isRepeat) s.correctFirstTry++;
+                speakWord(correct);
+                s.queue.shift();
+                setTimeout(renderPhrasalQuestion, 1000);
+            } else {
+                item.isRepeat = true;
+                speakWord(correct);
+                setTimeout(() => {
+                    s.queue.shift(); s.queue.push(item);
+                    renderPhrasalQuestion();
+                }, 1600);
+            }
+        });
+    });
+}
+
+// --- Финал уровня ---
+function finishPhrasalLevel() {
+    const s = phrasalState;
+    if (!s) return;
+
+    const total = s.totalUnique;
+    const need = Math.ceil(total * PHRASAL_PASS_RATIO);
+    const passed = s.correctFirstTry >= need;
+    const percent = Math.round((s.correctFirstTry / total) * 100);
+    const isLast = s.level === 4;
+
+    let emoji = '😔', message = 'Попробуй ещё раз!';
+    if (passed) {
+        if (percent === 100) emoji = '🏆', message = 'Идеально!';
+        else if (percent >= 90) emoji = '🌟', message = 'Превосходно!';
+        else emoji = '🎉', message = 'Отличная работа!';
+    } else if (percent >= 50) emoji = '💪', message = 'Почти получилось!';
+
+    const nextInfo = PHRASAL_LEVELS.find(l => l.num === s.level + 1);
+    let subtitle = '', primaryBtn = '';
+
+    if (!isLast) {
+        if (passed) {
+            subtitle = `Уровень ${s.level} пройден! Дальше — уровень ${s.level + 1}: «${nextInfo.title}»`;
+            primaryBtn = `<button class="sg-btn-primary" id="ph-next">▶ Уровень ${s.level + 1}: ${nextInfo.title}</button>`;
+        } else {
+            subtitle = `Чтобы перейти дальше, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="ph-retry">🔄 Попробовать снова</button>`;
+        }
+    } else {
+        if (passed) {
+            subtitle = 'Ты прошёл все 4 уровня игры «Фразовые глаголы»! 🎉';
+            primaryBtn = `<button class="sg-btn-primary" id="ph-restart">🔄 Играть заново</button>`;
+        } else {
+            subtitle = `Чтобы завершить игру, нужно ${need} правильных из ${total}.`;
+            primaryBtn = `<button class="sg-btn-primary" id="ph-retry">🔄 Попробовать снова</button>`;
+        }
+    }
+
+    contentEl.innerHTML = `
+        <div style="text-align:center;">
+            <button class="games-back-btn" id="ph-fin-back">← К играм</button>
+        </div>
+        <div class="games-header">
+            <h2>Уровень ${s.level}${isLast ? ' · финальный' : ''}</h2>
+        </div>
+        <div class="sg-container">
+            <div class="sg-complete">
+                <div class="sg-complete-emoji">${emoji}</div>
+                <h2>${message}</h2>
+                <div class="sg-complete-score">${s.correctFirstTry} / ${total} · ${percent}%</div>
+                <div class="sg-complete-status ${passed ? 'passed' : 'failed'}">
+                    ${passed ? '✓ Уровень пройден' : `✗ Не хватило ${need - s.correctFirstTry} правильных`}
+                </div>
+                ${buildLevelNavHtml(s.level, 4,
+                    ['Подставь предлог', 'Аудирование', 'Один глагол — много', 'В предложении'])}
+                <p style="color:#6A6A6A; margin-bottom:20px;">${subtitle}</p>
+                <div class="sg-complete-actions">
+                    ${primaryBtn}
+                    <button class="sg-btn-secondary" id="ph-fin-back-games">← К играм</button>
+                </div>
+            </div>
+        </div>`;
+
+    const back = () => { phrasalState = null; renderAdultsGameList(); };
+    document.getElementById('ph-fin-back').addEventListener('click', back);
+    document.getElementById('ph-fin-back-games').addEventListener('click', back);
+
+    const retry = document.getElementById('ph-retry');
+    if (retry) retry.addEventListener('click', () => startPhrasalLevel(s.level));
+    const next = document.getElementById('ph-next');
+    if (next) next.addEventListener('click', () => startPhrasalLevel(s.level + 1));
+    const restart = document.getElementById('ph-restart');
+    if (restart) restart.addEventListener('click', () => startPhrasalLevel(1));
+
+    attachLevelNavHandlers(s.level, (lvl) => startPhrasalLevel(lvl));
+}
+// ============================================================
+// КОНЕЦ ИГРЫ «ФРАЗОВЫЕ ГЛАГОЛЫ»
+// ============================================================
 // ============================================================
 // ИГРА: ВЫБЕРИ ПЕРЕВОД
 // ============================================================
